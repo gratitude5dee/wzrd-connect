@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wzrd-connect",
+  "main": "src/server/cloudflare.ts",
+  "compatibility_date": "2026-07-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "cache": {
+    "enabled": true,
+  },
+  "assets": {
+    "directory": "dist/web",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/v1/*", "/mcp*", "/oauth/*", "/docs", "/docs/*", "/openapi.json", "/health"],
+  },
+  "routes": [
+    { "pattern": "connector.wzrd.tech", "custom_domain": true },
+  ],
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true,
+    },
+  },
+  "vars": {
+    "OOMOL_CONNECT_ORIGIN": "https://connector.wzrd.tech",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "wzrd-connect",
+      "database_id": "b3135e2d-b92b-406c-ab3c-674e7a1ec094",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "TRANSIT_FILES",
+      "bucket_name": "wzrd-connect-transit",
+    },
+  ],
+}
