@@ -149,6 +149,14 @@ export interface IConnectServerOptions {
   logger?: RuntimeLogger;
   compressApiResponses?: boolean;
   serveDocumentation?: boolean;
+  /**
+   * Serves `/api/actions` from a prebuilt catalog asset instead of the
+   * in-memory list: the ~40MB list re-serializes (and re-compresses) on every
+   * request, which blows the Cloudflare Workers CPU budget. The deployed
+   * assets bundle carries `catalog/actions.json`, emitted by
+   * `copy-catalog-assets.ts`.
+   */
+  fetchActionsAsset?: (request: Request) => Promise<Response>;
   marketplace?: MarketplaceService;
   saasProject?: SaasProjectService;
   saas?: SaasExecutionService;
@@ -206,8 +214,13 @@ export class ConnectServer {
       // Compress dashboard JSON responses. Scoped to /api/* so the streaming
       // /mcp transport and /v1/proxy pass-through are never buffered/re-encoded.
       // The middleware's content-type filter already skips non-text bodies
-      // (e.g. transit file downloads).
-      app.use("/api/*", compress());
+      // (e.g. transit file downloads). /api/actions is excluded: its ~40MB body
+      // is a precomputed catalog byte string, and re-gzipping it on every
+      // request exceeds the Workers CPU budget (503s observed live).
+      const gzip = compress();
+      app.use("/api/*", (context, next) =>
+        context.req.path === "/api/actions" ? next() : gzip(context, next),
+      );
     }
     app.use("*", createLocalAuthMiddleware(auth));
     if (this.options.marketplace) {
@@ -281,7 +294,7 @@ export class ConnectServer {
     app.get("/api/providers", (context) => this.listProviderSummaries(context));
     app.get("/api/providers/:service", (context) => this.getProvider(context, context.req.param("service")));
 
-    app.get("/api/actions", (context) => context.json(this.options.catalog.actions));
+    app.get("/api/actions", async (context) => await this.listActions(context));
     app.get("/api/actions/search", (context) => this.searchApiActions(context));
     app.get("/api/actions/:actionId/agent.md", (context) =>
       this.getActionMarkdown(context, context.req.param("actionId")),
@@ -488,6 +501,30 @@ export class ConnectServer {
       return context.body(null, 304);
     }
     return context.body(providerSummariesJson, 200, { "Content-Type": "application/json" });
+  }
+
+  /**
+   * `/api/actions` serves the precomputed catalog byte string instead of
+   * re-serializing `catalog.actions` — the ~40MB stringify + gzip per request
+   * was the Worker CPU-limit 503 seen on the console overview.
+   */
+  private async listActions(context: Context): Promise<Response> {
+    if (this.options.fetchActionsAsset) {
+      const response = await this.options.fetchActionsAsset(context.req.raw);
+      // `not_found_handling: "single-page-application"` answers a missing
+      // asset with the shell HTML, so a non-JSON response means the deploy
+      // predates catalog/actions.json — fall back to the in-memory payload.
+      const contentType = response.headers.get("content-type") ?? "";
+      if (response.ok && contentType.includes("json")) {
+        return response;
+      }
+    }
+    const { json, etag } = this.options.catalog.actionsPayload();
+    context.header("ETag", etag);
+    if (requestMatchesEtag(context.req.header("If-None-Match"), etag)) {
+      return context.body(null, 304);
+    }
+    return context.body(json, 200, { "Content-Type": "application/json" });
   }
 
   private async configureMarketplace(context: Context): Promise<Response> {

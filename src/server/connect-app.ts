@@ -46,6 +46,8 @@ export interface ConnectAppOptions {
   computeRuntimeAuthConfigured?: boolean;
   compressApiResponses?: boolean;
   serveDocumentation?: boolean;
+  /** Streams `/api/actions` from a prebuilt catalog asset when the host serves one (see `IConnectServerOptions`). */
+  fetchActionsAsset?: (request: Request) => Promise<Response>;
 }
 
 export interface ConnectApp {
@@ -172,6 +174,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
       saasOAuth,
       compressApiResponses: options.compressApiResponses,
       serveDocumentation: options.serveDocumentation,
+      fetchActionsAsset: options.fetchActionsAsset,
     }).createApp(),
     runtimeAuthConfigured:
       Boolean(options.runtimeToken) ||

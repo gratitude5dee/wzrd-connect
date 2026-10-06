@@ -92,6 +92,7 @@ function requireProviderArray(value: unknown, path: string): ProviderDefinition[
  * therefore detected by the response content type as well as by the status, otherwise the SPA shell
  * would be parsed as catalog JSON.
  */
+
 async function readJsonAsset(assets: AssetsBinding, path: string): Promise<unknown> {
   const response = await fetchAsset(assets, path);
   if (response.status === 404) {
@@ -135,4 +136,70 @@ function assetRequestError(path: string, reason: string): Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * `/api/actions` serves a byte-identical response without touching the worker
+ * CPU budget: the payload is ~40MB (25MiB is the single-asset ceiling), so
+ * `copy-catalog-assets.ts` emits it as `actions-NNNN.json` byte slices plus
+ * `actions-index.json` ({ etag, bytes, chunks }). Slices concat back to the
+ * exact serialization — a memcpy, not a stringify. The index carries one ETag
+ * for the whole body so conditional requests still 304.
+ */
+export async function serveActionsFromAssets(
+  assets: AssetsBinding,
+  request: Request,
+): Promise<Response> {
+  const indexResponse = await fetchAsset(assets, `/catalog/${actionsIndexFile}`);
+  const indexContentType = indexResponse.headers.get("content-type") ?? "";
+  if (!indexResponse.ok || !indexContentType.includes("json")) {
+    return indexResponse;
+  }
+  const index = parseActionsAssetIndex(await indexResponse.json());
+  const etag = index.etag;
+  const ifNoneMatch = request.headers.get("if-none-match");
+  if (ifNoneMatch && ifNoneMatch.includes(etag)) {
+    return new Response(null, { status: 304, headers: { etag } });
+  }
+  const parts = await Promise.all(
+    index.chunks.map(async (chunk) => {
+      const part = await fetchAsset(assets, `/catalog/${chunk}`);
+      if (!part.ok) {
+        throw new Error(`Cloudflare actions asset ${chunk} returned ${part.status}`);
+      }
+      return part.arrayBuffer();
+    }),
+  );
+  const body = new Uint8Array(index.bytes);
+  let offset = 0;
+  for (const part of parts) {
+    body.set(new Uint8Array(part), offset);
+    offset += part.byteLength;
+  }
+  return new Response(body, {
+    headers: { "content-type": "application/json; charset=utf-8", etag },
+  });
+}
+
+const actionsIndexFile = "actions-index.json";
+
+interface ActionsAssetIndex {
+  version: 1;
+  etag: string;
+  bytes: number;
+  chunks: string[];
+}
+
+function parseActionsAssetIndex(value: unknown): ActionsAssetIndex {
+  const record = isRecord(value) ? value : {};
+  if (
+    record.version !== 1 ||
+    typeof record.etag !== "string" ||
+    typeof record.bytes !== "number" ||
+    !Array.isArray(record.chunks) ||
+    !record.chunks.every((chunk): chunk is string => typeof chunk === "string")
+  ) {
+    throw new Error("Cloudflare actions asset index is malformed");
+  }
+  return { version: 1, etag: record.etag, bytes: record.bytes, chunks: record.chunks };
 }

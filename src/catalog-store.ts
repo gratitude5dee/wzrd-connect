@@ -73,6 +73,15 @@ export type CatalogStore = {
    * answer conditional requests with `304 Not Modified`.
    */
   providerSummariesEtag: string;
+  /**
+   * Full action list as pre-serialized UTF-8 bytes + ETag, lazily computed on
+   * first call and memoized for the store's lifetime. The list is ~40MB —
+   * re-serializing (and re-compressing) it per request blows the Cloudflare
+   * Workers CPU budget, so `/api/actions` serves these bytes verbatim. Lazy
+   * rather than eager so schema accessors of a lazy catalog are only read
+   * when the endpoint is actually hit, mirroring the old handler's timing.
+   */
+  actionsPayload(): { json: Uint8Array<ArrayBuffer>; etag: string };
   actions: RuntimeActionDefinition[];
   actionsById: Map<string, RuntimeActionDefinition>;
   executableActionIds: Set<string>;
@@ -138,12 +147,23 @@ export function createCatalogStore(
   const actions = runtimeProviders.flatMap((provider) => provider.actions);
   const providerSummaries = runtimeProviders.map(toProviderSummary);
   const providerSummariesJson = JSON.stringify(providerSummaries);
+  let actionsPayload: { json: Uint8Array<ArrayBuffer>; etag: string } | undefined;
 
   return {
     providers: runtimeProviders,
     // TextEncoder rather than Buffer: the Cloudflare Workers build shares this function.
     providerSummariesJson: new TextEncoder().encode(providerSummariesJson),
     providerSummariesEtag: weakEtag(providerSummariesJson),
+    actionsPayload: () => {
+      if (!actionsPayload) {
+        const serialized = JSON.stringify(actions);
+        actionsPayload = {
+          json: new TextEncoder().encode(serialized),
+          etag: weakEtag(serialized),
+        };
+      }
+      return actionsPayload;
+    },
     actions,
     actionsById: new Map(actions.map((action) => [action.id, action])),
     executableActionIds: executableActions,

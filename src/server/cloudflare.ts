@@ -17,7 +17,7 @@ import { ProviderLoader } from "../providers/provider-loader.ts";
 import { executorModules } from "../providers/registry.cloudflare.generated.ts";
 import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
 import { isConsoleShellPath } from "./api/console-paths.ts";
-import { loadCatalogFromAssets } from "./cloudflare/catalog-assets.ts";
+import { loadCatalogFromAssets, serveActionsFromAssets } from "./cloudflare/catalog-assets.ts";
 import { readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
 import { createConnectApp } from "./connect-app.ts";
 import { preloadOptionalServerModules } from "./connect-server.ts";
@@ -84,6 +84,10 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
   const secretCodec = await createSecretCodec(env.OOMOL_CONNECT_ENCRYPTION_KEY);
   return await createConnectApp({
     catalog: await loadCatalogOnce(assets),
+    // `dist/web/catalog/actions-*.json` is emitted by scripts/copy-catalog-assets.ts
+    // (the prebuilt /api/actions payload — ~40MB, too big to serialize per request).
+    fetchActionsAsset: (request: Request): Promise<Response> =>
+      serveActionsFromAssets(assets, request),
     providerLoader: new ProviderLoader(executorModules),
     runtimeDatabase: new D1RuntimeDatabase(env.DB, {
       secretCodec,
