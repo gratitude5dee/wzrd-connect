@@ -114,15 +114,6 @@ function loadDocsHandler(openapiUrl = "/openapi.json"): Promise<MiddlewareHandle
 }
 
 /**
- * Import and evaluate the modules the /mcp and /docs routes defer to their first request. The Node server never
- * calls this, so its startup graph stays small; Cloudflare Workers call it at app creation so an isolate keeps
- * paying module evaluation up front rather than on its first MCP or docs request.
- */
-export async function preloadOptionalServerModules(): Promise<void> {
-  await Promise.all([loadMcpModule(), loadDocsHandler()]);
-}
-
-/**
  * Dependencies required to construct the local connector server.
  */
 export interface IConnectServerOptions {
@@ -157,6 +148,13 @@ export interface IConnectServerOptions {
    * `copy-catalog-assets.ts`.
    */
   fetchActionsAsset?: (request: Request) => Promise<Response>;
+  /**
+   * Serves `/api/providers` from a prebuilt provider-summaries asset instead of
+   * the in-memory stringify: a cold Cloudflare isolate must not pay the ~9MB
+   * serialization inside its 2s CPU budget (`copy-catalog-assets.ts` emits
+   * `catalog/provider-summaries.json`).
+   */
+  fetchProvidersAsset?: (request: Request) => Promise<Response>;
   marketplace?: MarketplaceService;
   saasProject?: SaasProjectService;
   saas?: SaasExecutionService;
@@ -494,7 +492,17 @@ export class ConnectServer {
     return app;
   }
 
-  private listProviderSummaries(context: Context): Response {
+  private async listProviderSummaries(context: Context): Promise<Response> {
+    if (this.options.fetchProvidersAsset) {
+      const response = await this.options.fetchProvidersAsset(context.req.raw);
+      // Same missing-asset detection as /api/actions: the SPA fallback answers
+      // unknown paths with the shell HTML, so a non-JSON response means the
+      // deploy predates provider-summaries.json — use the in-memory payload.
+      const contentType = response.headers.get("content-type") ?? "";
+      if (response.ok && contentType.includes("json")) {
+        return response;
+      }
+    }
     const { providerSummariesJson, providerSummariesEtag } = this.options.catalog;
     context.header("ETag", providerSummariesEtag);
     if (requestMatchesEtag(context.req.header("If-None-Match"), providerSummariesEtag)) {

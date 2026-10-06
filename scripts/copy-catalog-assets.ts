@@ -1,6 +1,6 @@
 import type { ProviderDefinition } from "../src/core/types.ts";
+import type { CatalogStore } from "../src/catalog-store.ts";
 
-import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createCatalogStore, resolveExecutableActionIds } from "../src/catalog-store.ts";
@@ -64,16 +64,48 @@ export async function copyCatalogAssets(options: CopyCatalogAssetsOptions): Prom
 
 export const actionsChunkBytes = 4 * 1024 * 1024;
 export const actionsIndexFileName = "actions-index.json";
+export const providersFileName = "provider-summaries.json";
+export const providersIndexFileName = "providers-index.json";
 
-export interface WriteActionsAssetOptions {
+export interface LoadAssetCatalogStoreOptions {
   sourceDir: string;
-  targetDir: string;
   /**
    * Services with local executor modules in the worker bundle
    * (`registry.cloudflare.generated.ts` keys) — the `execution` flags the
    * worker would compute.
    */
   executableServices: Iterable<string>;
+}
+
+/**
+ * Build the same `CatalogStore` the Cloudflare worker builds from the asset
+ * chunks, so every emitted payload is byte-identical to what the runtime would
+ * serialize (same providers, same `execution` flags).
+ */
+export async function loadAssetCatalogStore(options: LoadAssetCatalogStoreOptions): Promise<CatalogStore> {
+  const entries = (await readdir(options.sourceDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const definitions = await Promise.all(
+    entries.map(async (entry) => {
+      const content = await readFile(join(options.sourceDir, entry.name), "utf8");
+      try {
+        return JSON.parse(content) as ProviderDefinition;
+      } catch (cause) {
+        throw new Error(`Failed to parse catalog provider file: ${entry.name}`, { cause });
+      }
+    }),
+  );
+  return createCatalogStore(definitions, {
+    executableActionIds: resolveExecutableActionIds(definitions, {
+      executableServices: options.executableServices,
+    }),
+  });
+}
+
+export interface WritePayloadAssetOptions {
+  store: CatalogStore;
+  targetDir: string;
 }
 
 export interface ActionsAssetIndex {
@@ -94,27 +126,9 @@ export interface ActionsAssetIndex {
  * `createCatalogStore` would emit, so the worker serves it with a memcpy
  * instead of a stringify.
  */
-export async function writeActionsAsset(options: WriteActionsAssetOptions): Promise<ActionsAssetIndex> {
-  const entries = (await readdir(options.sourceDir, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const definitions = await Promise.all(
-    entries.map(async (entry) => {
-      const content = await readFile(join(options.sourceDir, entry.name), "utf8");
-      try {
-        return JSON.parse(content) as ProviderDefinition;
-      } catch (cause) {
-        throw new Error(`Failed to parse catalog provider file: ${entry.name}`, { cause });
-      }
-    }),
-  );
-  const store = createCatalogStore(definitions, {
-    executableActionIds: resolveExecutableActionIds(definitions, {
-      executableServices: options.executableServices,
-    }),
-  });
-  const body = Buffer.from(JSON.stringify(store.actions), "utf8");
-  const etag = `"sha256-${createHash("sha256").update(body).digest("hex").slice(0, 16)}"`;
+export async function writeActionsAsset(options: WritePayloadAssetOptions): Promise<ActionsAssetIndex> {
+  const body = Buffer.from(options.store.actionsPayload().json);
+  const etag = options.store.actionsPayload().etag;
 
   const chunks: string[] = [];
   for (let start = 0; start < body.length; start += actionsChunkBytes) {
@@ -123,6 +137,28 @@ export async function writeActionsAsset(options: WriteActionsAssetOptions): Prom
   }
   const index: ActionsAssetIndex = { version: 1, etag, bytes: body.length, chunks };
   await writeFile(join(options.targetDir, actionsIndexFileName), `${JSON.stringify(index)}\n`);
+  return index;
+}
+
+export interface ProvidersAssetIndex {
+  version: 1;
+  etag: string;
+  bytes: number;
+  file: string;
+}
+
+/**
+ * Emit the prebuilt `/api/providers` payload (~9MB) as one asset —
+ * `provider-summaries.json` plus a `providers-index.json` carrying the ETag.
+ * The worker then serves it verbatim and never pays the summary stringify on
+ * a cold isolate.
+ */
+export async function writeProvidersAsset(options: WritePayloadAssetOptions): Promise<ProvidersAssetIndex> {
+  const body = Buffer.from(options.store.providerSummariesJson);
+  const etag = options.store.providerSummariesEtag;
+  await writeFile(join(options.targetDir, providersFileName), body);
+  const index: ProvidersAssetIndex = { version: 1, etag, bytes: body.length, file: providersFileName };
+  await writeFile(join(options.targetDir, providersIndexFileName), `${JSON.stringify(index)}\n`);
   return index;
 }
 
@@ -169,13 +205,12 @@ if (import.meta.main) {
   // first — its service keys are exactly the executables the worker reports.
   const { executorModules } = await import("../src/providers/registry.cloudflare.generated.ts");
   const index = await copyCatalogAssets({ sourceDir, targetDir });
-  const actions = await writeActionsAsset({
-    sourceDir,
-    targetDir,
-    executableServices: Object.keys(executorModules),
-  });
+  const store = await loadAssetCatalogStore({ sourceDir, executableServices: Object.keys(executorModules) });
+  const actions = await writeActionsAsset({ store, targetDir });
+  const providers = await writeProvidersAsset({ store, targetDir });
   console.log(
     `Copied ${index.providerCount} catalog apps into ${index.chunks.length} static asset chunks ` +
-      `and wrote the actions payload (${actions.bytes} bytes in ${actions.chunks.length} chunks).`,
+      `and wrote the actions payload (${actions.bytes} bytes in ${actions.chunks.length} chunks) ` +
+      `plus provider summaries (${providers.bytes} bytes).`,
   );
 }

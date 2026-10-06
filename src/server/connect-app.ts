@@ -48,6 +48,8 @@ export interface ConnectAppOptions {
   serveDocumentation?: boolean;
   /** Streams `/api/actions` from a prebuilt catalog asset when the host serves one (see `IConnectServerOptions`). */
   fetchActionsAsset?: (request: Request) => Promise<Response>;
+  /** Streams `/api/providers` from a prebuilt summaries asset when the host serves one (see `IConnectServerOptions`). */
+  fetchProvidersAsset?: (request: Request) => Promise<Response>;
 }
 
 export interface ConnectApp {
@@ -175,6 +177,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
       compressApiResponses: options.compressApiResponses,
       serveDocumentation: options.serveDocumentation,
       fetchActionsAsset: options.fetchActionsAsset,
+      fetchProvidersAsset: options.fetchProvidersAsset,
     }).createApp(),
     runtimeAuthConfigured:
       Boolean(options.runtimeToken) ||

@@ -17,10 +17,10 @@ import { ProviderLoader } from "../providers/provider-loader.ts";
 import { executorModules } from "../providers/registry.cloudflare.generated.ts";
 import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
 import { isConsoleShellPath } from "./api/console-paths.ts";
-import { loadCatalogFromAssets, serveActionsFromAssets } from "./cloudflare/catalog-assets.ts";
+import { loadCatalogFromAssets, serveActionsFromAssets, serveProvidersFromAssets } from "./cloudflare/catalog-assets.ts";
 import { readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
 import { createConnectApp } from "./connect-app.ts";
-import { preloadOptionalServerModules } from "./connect-server.ts";
+
 import { KVTransitFileService } from "./files/kv-transit-files.ts";
 import { R2TransitFileService } from "./files/r2-transit-files.ts";
 import { createWorkerSecretCodec } from "./secrets/worker-secret-codec.ts";
@@ -77,17 +77,24 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
   if (!assets) {
     throw new Error("Cloudflare ASSETS binding is required to load the catalog");
   }
-  // The Node server defers the MCP and docs modules to their first request so its startup graph stays small.
-  // Workers keep paying their evaluation here, at app creation, so the first /mcp or /docs request of an isolate
-  // is served the same way as every later one.
-  await preloadOptionalServerModules();
+  // Module evaluation stays lazy (the /mcp and /docs handlers import their
+  // modules on first use) — a cold isolate has ~2s of CPU and the catalog load
+  // alone spends most of it.
   const secretCodec = await createSecretCodec(env.OOMOL_CONNECT_ENCRYPTION_KEY);
-  return await createConnectApp({
-    catalog: await loadCatalogOnce(assets),
+  const catalogStart = Date.now();
+  const catalog = await loadCatalogOnce(assets);
+  const catalogMs = Date.now() - catalogStart;
+  const appStart = Date.now();
+  const app = await createConnectApp({
+    catalog,
     // `dist/web/catalog/actions-*.json` is emitted by scripts/copy-catalog-assets.ts
     // (the prebuilt /api/actions payload — ~40MB, too big to serialize per request).
     fetchActionsAsset: (request: Request): Promise<Response> =>
       serveActionsFromAssets(assets, request),
+    // `dist/web/catalog/provider-summaries.json` is emitted by
+    // scripts/copy-catalog-assets.ts — same cold-isolate CPU rationale.
+    fetchProvidersAsset: (request: Request): Promise<Response> =>
+      serveProvidersFromAssets(assets, request),
     providerLoader: new ProviderLoader(executorModules),
     runtimeDatabase: new D1RuntimeDatabase(env.DB, {
       secretCodec,
@@ -135,6 +142,8 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
     // https://developers.cloudflare.com/workers/runtime-apis/response/
     compressApiResponses: false,
   });
+  console.info(`wzrd-connect cold start: catalog=${catalogMs}ms app=${Date.now() - appStart}ms`);
+  return app;
 }
 
 const workerLogger = {

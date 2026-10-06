@@ -145,15 +145,30 @@ export function createCatalogStore(
     };
   });
   const actions = runtimeProviders.flatMap((provider) => provider.actions);
-  const providerSummaries = runtimeProviders.map(toProviderSummary);
-  const providerSummariesJson = JSON.stringify(providerSummaries);
+  let summariesPayload: { json: Uint8Array<ArrayBuffer>; etag: string } | undefined;
+  const providerSummaries = () => {
+    if (!summariesPayload) {
+      const serialized = JSON.stringify(runtimeProviders.map(toProviderSummary));
+      summariesPayload = {
+        // TextEncoder rather than Buffer: the Cloudflare Workers build shares this function.
+        json: new TextEncoder().encode(serialized),
+        etag: weakEtag(serialized),
+      };
+    }
+    return summariesPayload;
+  };
   let actionsPayload: { json: Uint8Array<ArrayBuffer>; etag: string } | undefined;
 
   return {
     providers: runtimeProviders,
-    // TextEncoder rather than Buffer: the Cloudflare Workers build shares this function.
-    providerSummariesJson: new TextEncoder().encode(providerSummariesJson),
-    providerSummariesEtag: weakEtag(providerSummariesJson),
+    // Lazy getters: Cloudflare serves /api/providers from a prebuilt asset, so the
+    // ~9MB summary stringify must not run inside a cold isolate's CPU budget.
+    get providerSummariesJson() {
+      return providerSummaries().json;
+    },
+    get providerSummariesEtag() {
+      return providerSummaries().etag;
+    },
     actionsPayload: () => {
       if (!actionsPayload) {
         const serialized = JSON.stringify(actions);

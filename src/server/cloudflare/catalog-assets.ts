@@ -181,6 +181,59 @@ export async function serveActionsFromAssets(
   });
 }
 
+/**
+ * `/api/providers` serves the ~9MB provider-summaries payload verbatim from a
+ * single prebuilt asset (`provider-summaries.json`, well under the 25MiB
+ * single-asset ceiling) plus `providers-index.json` carrying the ETag — same
+ * cold-isolate CPU rationale as {@link serveActionsFromAssets}: emitting the
+ * body at build time keeps the summary stringify out of every cold isolate.
+ */
+export async function serveProvidersFromAssets(
+  assets: AssetsBinding,
+  request: Request,
+): Promise<Response> {
+  const indexResponse = await fetchAsset(assets, `/catalog/${providersIndexFile}`);
+  const indexContentType = indexResponse.headers.get("content-type") ?? "";
+  if (!indexResponse.ok || !indexContentType.includes("json")) {
+    return indexResponse;
+  }
+  const index = parseProvidersAssetIndex(await indexResponse.json());
+  const etag = index.etag;
+  const ifNoneMatch = request.headers.get("if-none-match");
+  if (ifNoneMatch && ifNoneMatch.includes(etag)) {
+    return new Response(null, { status: 304, headers: { etag } });
+  }
+  const body = await fetchAsset(assets, `/catalog/${index.file}`);
+  if (!body.ok) {
+    throw new Error(`Cloudflare providers asset ${index.file} returned ${body.status}`);
+  }
+  return new Response(await body.arrayBuffer(), {
+    headers: { "content-type": "application/json; charset=utf-8", etag },
+  });
+}
+
+const providersIndexFile = "providers-index.json";
+
+interface ProvidersAssetIndex {
+  version: 1;
+  etag: string;
+  bytes: number;
+  file: string;
+}
+
+function parseProvidersAssetIndex(value: unknown): ProvidersAssetIndex {
+  const record = isRecord(value) ? value : {};
+  if (
+    record.version !== 1 ||
+    typeof record.etag !== "string" ||
+    typeof record.bytes !== "number" ||
+    typeof record.file !== "string"
+  ) {
+    throw new Error("Cloudflare providers asset index is malformed");
+  }
+  return { version: 1, etag: record.etag, bytes: record.bytes, file: record.file };
+}
+
 const actionsIndexFile = "actions-index.json";
 
 interface ActionsAssetIndex {
