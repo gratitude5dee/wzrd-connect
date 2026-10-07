@@ -145,6 +145,10 @@ export function PactPage(_props: PactPageProps): ReactNode {
             <dd>
               <code>{identity.jwksUrl ?? "—"}</code>
             </dd>
+            <dt>{t("pact.identity.subject")}</dt>
+            <dd>
+              <code>{identity.subject}</code>
+            </dd>
             <dt>{t("pact.identity.createdAt")}</dt>
             <dd>{formatDate(identity.createdAt)}</dd>
             {identity.rotatedAt ? (

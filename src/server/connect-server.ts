@@ -374,6 +374,11 @@ export class ConnectServer {
       app.post("/api/runtime-tokens/:id/rotate-subject", (context) =>
         this.rotateRuntimeTokenSubject(context, context.req.param("id")),
       );
+    } else {
+      // A verifier probing the well-known paths with PACT off must get a real
+      // 404, not the SPA catch-all's 200.
+      app.get("/.well-known/jwks.json", notFound);
+      app.get("/.well-known/openid-configuration", notFound);
     }
     const saas = this.options.saasProject;
     if (saas) {

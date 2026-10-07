@@ -80,6 +80,19 @@ describe("registerStaticRoutes in embedded mode", () => {
     });
   });
 
+  it("keeps JSON 404 responses for unregistered well-known paths", async () => {
+    const app = await createEmbeddedApp();
+
+    for (const path of ["/.well-known/jwks.json", "/.well-known/openid-configuration"]) {
+      const response = await app.request(path);
+
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({
+        error: { code: "not_found", message: "Not found." },
+      });
+    }
+  });
+
   it("does not serve assets for POST requests", async () => {
     const app = await createEmbeddedApp();
 

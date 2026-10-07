@@ -85,6 +85,9 @@
       },
       "approvals": {
         "title": "审批"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "设置",
@@ -952,7 +955,8 @@
       "tokenOnce": "此令牌仅显示一次,绝不存储。请立即复制。",
       "copyToken": "复制令牌",
       "mint": "签发令牌",
-      "tokenFailed": "无法签发注册令牌。"
+      "tokenFailed": "无法签发注册令牌。",
+      "subject": "主体"
     },
     "registrations": {
       "heading": "Brand 注册",

@@ -85,6 +85,9 @@
       },
       "approvals": {
         "title": "Approbations"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "Paramètres",
@@ -952,7 +955,8 @@
       "tokenOnce": "Ce jeton n'est affiché qu'une seule fois et n'est jamais stocké. Copiez-le maintenant.",
       "copyToken": "Copier le jeton",
       "mint": "Émettre le jeton",
-      "tokenFailed": "Impossible d'émettre le jeton d'enregistrement."
+      "tokenFailed": "Impossible d'émettre le jeton d'enregistrement.",
+      "subject": "Sujet"
     },
     "registrations": {
       "heading": "Enregistrements de marques",

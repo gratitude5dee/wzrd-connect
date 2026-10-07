@@ -85,6 +85,9 @@
       },
       "approvals": {
         "title": "承認"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "設定",
@@ -952,7 +955,8 @@
       "tokenOnce": "このトークンは一度だけ表示され、保存されません。今すぐコピーしてください。",
       "copyToken": "トークンをコピー",
       "mint": "トークンを発行",
-      "tokenFailed": "登録トークンを発行できませんでした。"
+      "tokenFailed": "登録トークンを発行できませんでした。",
+      "subject": "サブジェクト"
     },
     "registrations": {
       "heading": "Brand 登録先",

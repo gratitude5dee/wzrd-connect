@@ -85,6 +85,9 @@
       },
       "approvals": {
         "title": "Approvals"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "Settings",
@@ -952,7 +955,8 @@
       "tokenOnce": "This token is shown once and is never stored. Copy it now.",
       "copyToken": "Copy token",
       "mint": "Mint token",
-      "tokenFailed": "Could not mint the registration token."
+      "tokenFailed": "Could not mint the registration token.",
+      "subject": "Subject"
     },
     "registrations": {
       "heading": "Brand registrations",
