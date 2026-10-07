@@ -4158,6 +4158,53 @@ describe("ConnectServer approval checkpoint", () => {
     expect(proxied).toHaveLength(1);
   });
 
+  it("executes approved requests on virtual no_auth connections", async () => {
+    // Regression: the gate must not persist the virtual summary id ("noauth:default") as
+    // connectionId — it is not in the connection store, so the replayed run would 404.
+    const noAuthProvider: ProviderDefinition = {
+      service: "noauth",
+      displayName: "No Auth",
+      categories: ["Developer Tools"],
+      authTypes: ["no_auth"],
+      auth: [{ type: "no_auth" }],
+      actions: [{ ...echoAction, id: "noauth.ping", service: "noauth", name: "ping" }],
+    };
+    const database = new SqliteRuntimeDatabase(":memory:");
+    requestDatabases.push(database);
+    const approvals = new ApprovalService({ store: database.approvalStore });
+    const executions: unknown[] = [];
+    const app = createTestServer([noAuthProvider], {
+      providerLoader: new ActionProviderLoader(async (input) => {
+        executions.push(input);
+        return { ok: true, output: { pong: input } };
+      }),
+      approvals,
+      actionPolicy: new LocalActionPolicyService({ requireApprovalOperations: ["write"] }),
+      executableActionIds: ["noauth.ping"],
+    }).createApp();
+
+    const created = await app.request("/v1/actions/noauth.ping", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { text: "ping" } }),
+    });
+    expect(created.status).toBe(202);
+    const { approvalId } = ((await created.json()) as { data: { approvalId: string } }).data;
+
+    await app.request(`/api/approvals/${approvalId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const executed = await app.request(`/v1/approvals/${approvalId}`);
+    expect(executed.status).toBe(200);
+    await expect(executed.json()).resolves.toMatchObject({
+      data: { pong: { text: "ping" } },
+      meta: { approvalId },
+    });
+    expect(executions).toHaveLength(1);
+  });
+
   it("keeps credential-shaped input out of the approval preview", async () => {
     const { app } = createApprovalTestApp();
     const created = await app.request("/v1/actions/example.echo", {
@@ -4268,13 +4315,14 @@ interface CreateTestServerOptions {
   uploadTransitFile?: (request: Request) => Promise<TransitFileUpload>;
   secretCodec?: ISecretCodec;
   allowedCustomOAuth?: string[];
+  executableActionIds?: string[];
 }
 
 function createTestServer(providers: ProviderDefinition[], options: CreateTestServerOptions = {}): ConnectServer {
   const requestDatabase = new SqliteRuntimeDatabase(":memory:");
   requestDatabases.push(requestDatabase);
   const catalog = createCatalogStore(providers, {
-    executableActionIds: ["example.echo"],
+    executableActionIds: ["example.echo", ...(options.executableActionIds ?? [])],
   });
   const providerLoader: IProviderLoader = options.providerLoader ?? new EmptyProviderLoader();
   const idempotency = options.idempotency ?? new MemoryIdempotencyStore();

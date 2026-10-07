@@ -144,8 +144,12 @@ export class ProxyRunner {
       // before credential lookup. `bypassApproval` skips the overlay on execute-on-poll calls.
       if (!input.bypassApproval && input.approvalGate) {
         const operationType = proxyOperationType(request.input.method);
+        // Virtual summaries (no_auth / marketplace) have synthetic ids that are not in the
+        // connection store; persisting one as connectionId would make the approved replay fail
+        // with connection_not_found. Only real stored ids (or a caller-supplied id) are kept.
+        const approvalConnectionId = connection?.virtual ? undefined : (connection?.id ?? input.connectionId);
         const approvalCheck = await input.policy.evaluateApproval(
-          { id: provider.service, operationType, connectionId: connection?.id },
+          { id: provider.service, operationType, connectionId: approvalConnectionId },
           input.approvalGate.lookup,
         );
         if (approvalCheck.outcome === "approval_required") {
@@ -158,7 +162,7 @@ export class ProxyRunner {
             request: {
               input: input.input,
               connectionName: connection?.connectionName ?? input.connectionName,
-              connectionId: connection?.id,
+              connectionId: approvalConnectionId,
             },
           });
           return {

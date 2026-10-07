@@ -144,11 +144,15 @@ export class ActionRunner {
           // Approval checkpoint: after the allow/block policy (and connection policy) passed,
           // before credential lookup. `bypassApproval` skips the overlay on execute-on-poll calls —
           // re-evaluating it there would gate an already-approved request behind a second approval.
+          // Virtual summaries (no_auth / marketplace) have synthetic ids that are not in the
+          // connection store; persisting one as connectionId would make the approved replay fail
+          // with connection_not_found. Only real stored ids (or a caller-supplied id) are kept.
+          const approvalConnectionId = summary?.virtual ? undefined : (summary?.id ?? input.connectionId);
           const approvalCheck =
             input.bypassApproval || !input.approvalGate
               ? undefined
               : await input.policy.evaluateApproval(
-                  { id: action.id, operationType: action.operationType, connectionId: summary?.id },
+                  { id: action.id, operationType: action.operationType, connectionId: approvalConnectionId },
                   input.approvalGate.lookup,
                 );
           if (approvalCheck && policy.allowed) {
@@ -164,7 +168,7 @@ export class ActionRunner {
               request: {
                 input: input.input,
                 connectionName: summary?.connectionName ?? input.connectionName,
-                connectionId: summary?.id,
+                connectionId: approvalConnectionId,
               },
             });
             approvalId = interception.approval.id;
