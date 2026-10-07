@@ -3,6 +3,7 @@ import type {
   PactBrandConnectResponse,
   PactCardPreview,
   PactCardPreviewResponse,
+  PactConsentRequest,
   PactIdentity,
   PactIdentityResponse,
   PactRegistration,
@@ -13,9 +14,9 @@ import type {
 import type { ReactNode, SubmitEvent } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
-import { Copy, KeyRound, Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, KeyRound, Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { apiDelete, apiGet, apiPost, apiPut } from "./api";
+import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "./api";
 import { formatDate } from "./model";
 import { Badge, EmptyState, InlineError } from "./shared-ui";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,11 @@ export function PactPage(_props: PactPageProps): ReactNode {
   const [registrations, setRegistrations] = useState<PactRegistration[]>([]);
   const [brands, setBrands] = useState<ConnectionRecord[]>([]);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [connectTarget, setConnectTarget] = useState<{
+    cardUrl: string;
+    connectionName: string;
+    grantedScopes: string[];
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -245,35 +251,80 @@ export function PactPage(_props: PactPageProps): ReactNode {
                   <TableHead>{t("pact.brands.columns.alias")}</TableHead>
                   <TableHead>{t("pact.brands.columns.brand")}</TableHead>
                   <TableHead>{t("pact.brands.columns.interface")}</TableHead>
+                  <TableHead>{t("pact.brands.columns.scopes")}</TableHead>
                   <TableHead>{t("pact.brands.columns.mode")}</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {brands.map((brand) => (
-                  <TableRow key={brand.id ?? brand.connectionName}>
-                    <TableCell>
-                      <code>{brand.connectionName}</code>
-                    </TableCell>
-                    <TableCell>
-                      <code>{brand.pact?.brandDomain ?? brand.pact?.providerOrigin}</code>
-                    </TableCell>
-                    <TableCell>
-                      <code>{brand.pact?.interfaceUrl}</code>
-                    </TableCell>
-                    <TableCell>{brand.identityOnly ? <Badge>{t("pact.brands.identityOnly")}</Badge> : null}</TableCell>
-                  </TableRow>
-                ))}
+                {brands.map((brand) => {
+                  const grantedScopes = Array.isArray(brand.profile?.grantedScopes)
+                    ? (brand.profile?.grantedScopes as string[])
+                    : [];
+                  return (
+                    <TableRow key={brand.id ?? brand.connectionName}>
+                      <TableCell>
+                        <code>{brand.connectionName}</code>
+                      </TableCell>
+                      <TableCell>
+                        <code>{brand.pact?.brandDomain ?? brand.pact?.providerOrigin}</code>
+                      </TableCell>
+                      <TableCell>
+                        <code>{brand.pact?.interfaceUrl}</code>
+                      </TableCell>
+                      <TableCell>
+                        {grantedScopes.length ? (
+                          <span className="muted-copy">
+                            {grantedScopes.map((scope) => (
+                              <code key={scope}>{scope} </code>
+                            ))}
+                          </span>
+                        ) : (
+                          <span className="muted-copy">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {brand.identityOnly ? <Badge>{t("pact.brands.identityOnly")}</Badge> : null}
+                        {brand.pact?.needsReauthorization ? <Badge>{t("pact.brands.reauth")}</Badge> : null}
+                      </TableCell>
+                      <TableCell>
+                        {brand.pact ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setConnectTarget({
+                                cardUrl: brand.pact!.cardUrl,
+                                connectionName: brand.connectionName ?? "",
+                                grantedScopes,
+                              })
+                            }
+                          >
+                            {t("pact.brands.requestScopes")}
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
         )}
       </section>
 
-      {connectOpen ? (
+      {connectOpen || connectTarget ? (
         <ConnectBrandDialog
-          onClose={() => setConnectOpen(false)}
+          cardUrl={connectTarget?.cardUrl}
+          connectionName={connectTarget?.connectionName}
+          grantedScopes={connectTarget?.grantedScopes}
+          onClose={() => {
+            setConnectOpen(false);
+            setConnectTarget(null);
+          }}
           onConnected={() => {
             setConnectOpen(false);
+            setConnectTarget(null);
             void load();
           }}
         />
@@ -521,19 +572,23 @@ function RegistrationTokenDialog(props: { onClose(): void }): ReactNode {
 interface ConnectBrandDialogProps {
   onClose(): void;
   onConnected(): void;
+  /** "Request more scopes" mode — prefilled from an existing Brand row. */
+  cardUrl?: string;
+  connectionName?: string;
+  grantedScopes?: string[];
 }
 
 function ConnectBrandDialog(props: ConnectBrandDialogProps): ReactNode {
   const t = useTranslate();
-  const [cardUrl, setCardUrl] = useState("");
+  const [cardUrl, setCardUrl] = useState(props.cardUrl ?? "");
   const [preview, setPreview] = useState<PactCardPreview | null>(null);
-  const [connectionName, setConnectionName] = useState("");
-  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set());
+  const [connectionName, setConnectionName] = useState(props.connectionName ?? "");
+  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set(props.grantedScopes ?? []));
+  const [consent, setConsent] = useState<PactConsentRequest | null>(null);
   const [busy, setBusy] = useState<"preview" | "connect" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadPreview(event: SubmitEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
+  async function refreshPreview(): Promise<void> {
     setBusy("preview");
     setError(null);
     setPreview(null);
@@ -543,13 +598,56 @@ function ConnectBrandDialog(props: ConnectBrandDialogProps): ReactNode {
       });
       setPreview(result.preview);
       if (!connectionName) setConnectionName(suggestAlias(result.preview.name));
-      setSelectedScopes(new Set());
     } catch (caught) {
       setError(readErrorMessage(caught, t("pact.brands.previewFailed")));
     } finally {
       setBusy(null);
     }
   }
+
+  async function loadPreview(event: SubmitEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setSelectedScopes(new Set());
+    await refreshPreview();
+  }
+
+  useEffect(() => {
+    if (props.cardUrl) void refreshPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!consent) return;
+    const request = consent;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function poll(): Promise<void> {
+      try {
+        const result = await apiGet<{ success: boolean; data?: { status?: string } }>(request.pollUrl);
+        if (cancelled) return;
+        if (result.data?.status === "connected") {
+          props.onConnected();
+          return;
+        }
+        timer = setTimeout(() => void poll(), 2000);
+      } catch (caught) {
+        if (cancelled) return;
+        if (caught instanceof ApiError && caught.code === "pact_consent_denied") {
+          setError(t("pact.brands.consentDenied"));
+        } else if (caught instanceof ApiError && caught.code === "pact_consent_expired") {
+          setError(t("pact.brands.consentExpired"));
+        } else {
+          setError(readErrorMessage(caught, t("pact.brands.consentFailed")));
+        }
+      }
+    }
+    timer = setTimeout(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consent]);
 
   function toggleScope(scopeId: string): void {
     const next = new Set(selectedScopes);
@@ -561,12 +659,21 @@ function ConnectBrandDialog(props: ConnectBrandDialogProps): ReactNode {
   async function connect(): Promise<void> {
     setBusy("connect");
     setError(null);
+    setConsent(null);
     try {
-      await apiPost<PactBrandConnectResponse>("/v1/connections/pact/connect", {
+      const result = await apiPost<PactBrandConnectResponse>("/v1/connections/pact/connect", {
         connectionName: connectionName.trim(),
         agentCardUrl: cardUrl.trim(),
         scopes: selectedScopes.size ? [...selectedScopes] : undefined,
       });
+      if (!result.success) {
+        if (result.errorCode === "pact_consent_required") {
+          setConsent(result.data.consent);
+        } else {
+          setError(result.message ?? t("pact.brands.connectFailed"));
+        }
+        return;
+      }
       props.onConnected();
     } catch (caught) {
       setError(readErrorMessage(caught, t("pact.brands.connectFailed")));
@@ -648,19 +755,46 @@ function ConnectBrandDialog(props: ConnectBrandDialogProps): ReactNode {
             ) : null}
           </div>
         ) : null}
+        {consent ? (
+          <div className="field">
+            <span>{t("pact.brands.consent.title")}</span>
+            <p className="muted-copy">{t("pact.brands.consent.hint")}</p>
+            {consent.verificationUriComplete ? (
+              <div className="button-row">
+                <a href={consent.verificationUriComplete} target="_blank" rel="noreferrer">
+                  <Button variant="outline" size="sm" type="button">
+                    <ExternalLink size={14} />
+                    {t("pact.brands.consent.open")}
+                  </Button>
+                </a>
+              </div>
+            ) : null}
+            {consent.userCode ? (
+              <div className="field">
+                <span className="muted-copy">{t("pact.brands.consent.userCode")}</span>
+                <code>{consent.userCode}</code>
+              </div>
+            ) : null}
+            <span className="muted-copy">
+              <Loader2 className="spin" size={13} /> {t("pact.brands.consent.waiting")}
+            </span>
+          </div>
+        ) : null}
         {error ? <InlineError message={error} /> : null}
         <div className="button-row">
           <Button variant="outline" type="button" onClick={props.onClose} disabled={busy !== null}>
             {t("common.close")}
           </Button>
-          <Button
-            type="button"
-            disabled={busy !== null || !preview || !connectionName.trim()}
-            onClick={() => void connect()}
-          >
-            {busy === "connect" ? <Loader2 className="spin" size={15} /> : <Plus size={15} />}
-            {t("pact.brands.connect")}
-          </Button>
+          {!consent ? (
+            <Button
+              type="button"
+              disabled={busy !== null || !preview || !connectionName.trim()}
+              onClick={() => void connect()}
+            >
+              {busy === "connect" ? <Loader2 className="spin" size={15} /> : <Plus size={15} />}
+              {t("pact.brands.connect")}
+            </Button>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

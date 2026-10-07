@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import type { SignJWT } from "jose";
 
 import { Hono } from "hono";
 import { pactDelegationHeader } from "../a2a-client.ts";
@@ -29,6 +30,10 @@ export interface MockPactProvider {
   setVerifierJwks(jwks: { keys: unknown[] }): void;
   /** Expected PA-JWT audience — defaults to the provider origin. */
   setExpectedAudience(audience: string): void;
+  /** Device-flow state and scripting knobs (spec Appendix B). */
+  readonly oauth: MockPactOAuth;
+  /** The JWKS the fixture mints delegation tokens with (public half). */
+  signerJwks(): Promise<{ keys: unknown[] }>;
 }
 
 export interface MockPactRequest {
@@ -43,6 +48,14 @@ export type MockPactBehavior =
   | { kind: "task"; state: string; missingScopes?: string[]; verificationUriComplete?: string; contextId?: string }
   | { kind: "redirect"; location: string };
 
+/** One scripted answer a token-endpoint call pops; empty queue → authorization_pending. */
+export type MockTokenPoll =
+  | { kind: "approve"; grantedScopes?: string[]; refreshToken?: string; expiresIn?: number }
+  | { kind: "deny" }
+  | { kind: "slow_down" }
+  | { kind: "expired" }
+  | { kind: "error"; error: string; status?: number };
+
 export interface MockPactProviderOptions {
   /** Origin the mock claims; default `https://provider.example.com`. */
   origin?: string;
@@ -52,6 +65,36 @@ export interface MockPactProviderOptions {
   card?: unknown;
   /** Static card served at a redirect source path (see `cardRedirect`). */
   cardRedirect?: { path: string; location: string };
+}
+
+/** Device-flow knobs the fixture exposes (spec Appendix B). */
+export interface MockPactOAuth {
+  /** Answers the token endpoint pops per call; empty → `authorization_pending`. */
+  pollScript: MockTokenPoll[];
+  /** `interval` the device-authorization response advertises (default 1 s). */
+  interval: number;
+  /** `expires_in` the device-authorization response advertises (default 600 s). */
+  expiresIn: number;
+  /** Advertise `revocation_endpoint` in metadata and accept /oauth2/revoke. */
+  revocationAdvertised: boolean;
+  /** Extra claims merged into every minted delegation token (e.g. client_id). */
+  tokenClaimOverrides: Record<string, unknown>;
+  /** Token `aud` override (defaults to the interface URL) — for claim-mismatch tests. */
+  tokenAudience?: string;
+  /** Token `iss` override (defaults to the provider origin). */
+  tokenIssuer?: string;
+  /** Outstanding device_code values the fixture issued. */
+  pendingDeviceCodes: Set<string>;
+  /** Token values the revoke endpoint accepted (revocation reporting tests). */
+  revokedTokens: string[];
+  /** When set, the device-authorization endpoint answers `{error}` with 400. */
+  deviceAuthorizationError?: string;
+  /** The next `user_code` (default `user-<n>`). */
+  nextUserCode?: string;
+  /** The next `verification_uri_complete` (default `<origin>/device?user_code=…`). */
+  verificationUriComplete?: string;
+  /** Whether token responses carry `refresh_token` (default true). */
+  issueRefreshToken: boolean;
 }
 
 export function createMockPactProvider(options: MockPactProviderOptions = {}): MockPactProvider {
@@ -65,16 +108,163 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
   let card: unknown = options.card ?? defaultCard(origin, interfaceUrl);
   const behaviors: MockPactBehavior[] = [];
 
+  const oauth: MockPactOAuth = {
+    pollScript: [],
+    interval: 1,
+    expiresIn: 600,
+    revocationAdvertised: false,
+    tokenClaimOverrides: {},
+    pendingDeviceCodes: new Set<string>(),
+    revokedTokens: [],
+    issueRefreshToken: true,
+  };
+  // Delegation tokens are minted with a fixture-owned ES256 key, lazily so
+  // card-only tests never pay for keygen. Public half is served at jwks.json.
+  const pendingScopes = new Map<string, string>();
+  const pendingClients = new Map<string, string>();
+  let signerKey: { publicJwk: Record<string, unknown>; privateKey: Parameters<SignJWT["sign"]>[0] } | undefined;
+  const ensureSignerKey = async () => {
+    if (!signerKey) {
+      const { generateKeyPair, exportJWK } = await import("jose");
+      const pair = await generateKeyPair("ES256", { extractable: true });
+      const publicJwk = (await exportJWK(pair.publicKey)) as Record<string, unknown>;
+      publicJwk.alg = "ES256";
+      publicJwk.kid = "mock-brand-1";
+      signerKey = { publicJwk, privateKey: pair.privateKey };
+    }
+    return signerKey;
+  };
+  const mintToken = async (input: { clientId: string; scope: string; expiresIn: number }): Promise<string> => {
+    const key = await ensureSignerKey();
+    const { SignJWT } = await import("jose");
+    return new SignJWT({
+      client_id: input.clientId,
+      scope: input.scope,
+      grant_id: `grant-${crypto.randomUUID()}`,
+      ...oauth.tokenClaimOverrides,
+    })
+      .setProtectedHeader({ alg: "ES256", kid: "mock-brand-1" })
+      .setSubject("person-1")
+      .setAudience(oauth.tokenAudience ?? interfaceUrl)
+      .setIssuer(oauth.tokenIssuer ?? origin)
+      .setIssuedAt()
+      .setJti(crypto.randomUUID())
+      .setExpirationTime(Math.floor(Date.now() / 1000) + input.expiresIn)
+      .sign(key.privateKey);
+  };
+
   const app = new Hono();
   app.get("/.well-known/agent-card.json", (context) => context.json(card as object));
   if (options.cardRedirect) {
     app.get(options.cardRedirect.path, (context) => context.redirect(options.cardRedirect!.location));
   }
-  // Device-authorization/token endpoints exist so the card can advertise them;
-  // the full device-flow behavior lands with PR5. Registered before the
-  // wildcard below so their exact paths win.
-  app.post("/oauth2/device_authorization", (context) => context.json({ error: "not_implemented" }, 501));
-  app.post("/oauth2/token", (context) => context.json({ error: "not_implemented" }, 501));
+  // RFC 8628 device authorization: verifies the PA-JWT, issues a device_code.
+  app.post("/oauth2/device_authorization", async (context) => {
+    const headers = bearerHeaders(context);
+    const auth = await verifyPaJwt(context, headers, verifierJwks, expectedAudience, verifiedTokens);
+    if (auth !== undefined) {
+      return auth;
+    }
+    if (oauth.deviceAuthorizationError) {
+      return context.json({ error: oauth.deviceAuthorizationError }, 400);
+    }
+    const form = await context.req.parseBody();
+    const clientId = typeof form.client_id === "string" ? form.client_id : undefined;
+    if (!clientId) {
+      return context.json({ error: "invalid_client" }, 400);
+    }
+    const scope = typeof form.scope === "string" ? form.scope : "";
+    const deviceCode = `device-${crypto.randomUUID()}`;
+    const userCode = oauth.nextUserCode ?? `user-${crypto.randomUUID().slice(0, 8)}`;
+    oauth.pendingDeviceCodes.add(deviceCode);
+    pendingScopes.set(deviceCode, scope);
+    pendingClients.set(deviceCode, clientId);
+    requests.push({ headers, body: { form: { client_id: clientId, scope } } });
+    return context.json({
+      device_code: deviceCode,
+      user_code: userCode,
+      verification_uri: `${origin}/device`,
+      verification_uri_complete: oauth.verificationUriComplete ?? `${origin}/device?user_code=${userCode}`,
+      expires_in: oauth.expiresIn,
+      interval: oauth.interval,
+    });
+  });
+  // Token endpoint: device_code grant pops the poll script; refresh_token the same.
+  app.post("/oauth2/token", async (context) => {
+    const headers = bearerHeaders(context);
+    const auth = await verifyPaJwt(context, headers, verifierJwks, expectedAudience, verifiedTokens);
+    if (auth !== undefined) {
+      return auth;
+    }
+    const form = await context.req.parseBody();
+    const grantType = typeof form.grant_type === "string" ? form.grant_type : "";
+    requests.push({
+      headers,
+      body: {
+        form: {
+          grant_type: grantType,
+          device_code: form.device_code,
+          refresh_token: form.refresh_token ? "<present>" : undefined,
+          client_id: form.client_id,
+        },
+      },
+    });
+    const poll = oauth.pollScript.length > 0 ? oauth.pollScript.shift() : undefined;
+    if (poll?.kind === "deny") {
+      return context.json({ error: "access_denied" }, 400);
+    }
+    if (poll?.kind === "slow_down") {
+      return context.json({ error: "slow_down" }, 400);
+    }
+    if (poll?.kind === "expired") {
+      return context.json({ error: "expired_token" }, 400);
+    }
+    if (poll?.kind === "error") {
+      return context.json({ error: poll.error }, (poll.status ?? 400) as never);
+    }
+    if (!poll || poll.kind !== "approve") {
+      return context.json({ error: "authorization_pending" }, 400);
+    }
+    const clientId =
+      grantType === "urn:ietf:params:oauth:grant-type:device_code"
+        ? (pendingClients.get(String(form.device_code)) ?? "")
+        : typeof form.client_id === "string"
+          ? form.client_id
+          : "";
+    const requested =
+      grantType === "urn:ietf:params:oauth:grant-type:device_code"
+        ? (pendingScopes.get(String(form.device_code)) ?? "")
+        : "";
+    const scope = poll.grantedScopes?.join(" ") ?? requested;
+    const expiresIn = poll.expiresIn ?? 900;
+    const accessToken = await mintToken({ clientId, scope, expiresIn });
+    oauth.pendingDeviceCodes.delete(String(form.device_code));
+    return context.json({
+      access_token: accessToken,
+      token_type: "Bearer",
+      expires_in: expiresIn,
+      refresh_token:
+        oauth.issueRefreshToken || poll.refreshToken
+          ? (poll.refreshToken ?? `refresh-${crypto.randomUUID()}`)
+          : undefined,
+      scope,
+    });
+  });
+  app.post("/oauth2/revoke", async (context) => {
+    if (!oauth.revocationAdvertised) {
+      return context.notFound();
+    }
+    const headers = bearerHeaders(context);
+    const auth = await verifyPaJwt(context, headers, verifierJwks, expectedAudience, verifiedTokens);
+    if (auth !== undefined) {
+      return auth;
+    }
+    const form = await context.req.parseBody();
+    if (typeof form.token === "string") {
+      oauth.revokedTokens.push(form.token);
+    }
+    return context.body(null, 200);
+  });
   // Any path ending in /message:send answers: a card refresh can move the
   // interface (404 tests), and each declared interface must keep working.
   app.post("/*", async (context) => {
@@ -135,11 +325,16 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
   app.get("/.well-known/oauth-authorization-server", (context) =>
     context.json({
       issuer: origin,
+      jwks_uri: `${origin}/.well-known/jwks.json`,
       device_authorization_endpoint: `${origin}/oauth2/device_authorization`,
       token_endpoint: `${origin}/oauth2/token`,
+      revocation_endpoint: oauth.revocationAdvertised ? `${origin}/oauth2/revoke` : undefined,
     }),
   );
-  app.get("/.well-known/jwks.json", (context) => context.json({ keys: [] }));
+  app.get("/.well-known/jwks.json", async (context) => {
+    const key = await ensureSignerKey();
+    return context.json({ keys: [key.publicJwk] });
+  });
 
   const fetcher: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -165,7 +360,20 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
     setExpectedAudience(audience: string): void {
       expectedAudience = audience;
     },
+    oauth,
+    async signerJwks(): Promise<{ keys: unknown[] }> {
+      const key = await ensureSignerKey();
+      return { keys: [key.publicJwk] };
+    },
   };
+}
+
+function bearerHeaders(context: Context): Record<string, string> {
+  const headers: Record<string, string> = {};
+  context.req.raw.headers.forEach((value, name) => {
+    headers[name.toLowerCase()] = value;
+  });
+  return headers;
 }
 
 function defaultCard(origin: string, interfaceUrl: string): Record<string, unknown> {

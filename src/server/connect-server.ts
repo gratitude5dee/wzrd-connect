@@ -6,6 +6,7 @@ import type { ProviderHttpDispatchOptions } from "../core/provider-http-dispatch
 import type { RuntimeLogger, TransitFileUpload } from "../core/types.ts";
 import type { MarketplaceConfigInput, MarketplaceService } from "../marketplace/marketplace-service.ts";
 import type { OAuthClientConfigInput } from "../oauth/oauth-client-config-service.ts";
+import type { PactDelegationService } from "../pact/pact-delegation-service.ts";
 import type { PactIdentityErrorCode, PactIdentityService } from "../pact/pact-identity-service.ts";
 import type { PactService } from "../pact/pact-service.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
@@ -20,6 +21,7 @@ import type { ApprovalGate, ApprovalGateRequest } from "./approvals/approval-gat
 import type { ApprovalService, CreateGrantInput } from "./approvals/approval-service.ts";
 import type { ITransitFileService } from "./files/transit-file-store.ts";
 import type { ApprovalGrantRecord, ApprovalRecord } from "./storage/approval-store.ts";
+import type { ConnectionRequest } from "./storage/connection-request-store.ts";
 import type { IIdempotencyStore } from "./storage/idempotency-store.ts";
 import type { PactRegistrationStore } from "./storage/pact-registration-store.ts";
 import type { IRuntimePolicyStore } from "./storage/runtime-policy-store.ts";
@@ -48,6 +50,7 @@ import { MarketplaceError } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigError, OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthCallbackError, OAuthFlowError, OAuthFlowService } from "../oauth/oauth-flow-service.ts";
 import { PactCardError } from "../pact/agent-card.ts";
+import { pactRequestOwner } from "../pact/pact-delegation-service.ts";
 import { PactEgressError } from "../pact/pact-fetch.ts";
 import { PactIdentityError, pactJwksCacheControl } from "../pact/pact-identity-service.ts";
 import { ProviderDispatchRequestError, toProviderExecutionError } from "../providers/provider-runtime.ts";
@@ -190,6 +193,8 @@ export interface PactServerOptions {
   registrations: PactRegistrationStore;
   /** Brand connections + message:send dispatch (spec §4.4). */
   service: PactService;
+  /** Delegation device flow (spec §4.5) driving `/v1/connection-requests/:id` polls. */
+  delegation: PactDelegationService;
 }
 
 /**
@@ -1328,6 +1333,14 @@ export class ConnectServer {
       record = await service.get(query.approvalId);
     } else if (query.connectionRequestId) {
       record = await service.getForConnectionRequest(query.connectionRequestId, ownerKey);
+      if (!record && this.options.pact?.delegation) {
+        // A PACT consent request is the tool's other pollable id (spec §4.7):
+        // get_approval drives its token-endpoint poll the same way the route does.
+        const request = await this.options.oauthFlow.getConnectionRequest(query.connectionRequestId, pactRequestOwner);
+        if (request?.service === "pact") {
+          return this.pollPactConsent(request);
+        }
+      }
     }
     if (!record || record.ownerKey !== ownerKey) {
       return { ok: false, error: { code: "approval_not_found", message: "Approval not found." } };
@@ -1377,6 +1390,47 @@ export class ConnectServer {
         }
         return approvalResultToolPayload(await this.executeApprovedApproval(context, claimed));
       }
+    }
+  }
+
+  /** `get_approval` on a PACT connection request: drive the consent poll and shape the result (spec §4.7). */
+  private async pollPactConsent(request: ConnectionRequest): Promise<Record<string, unknown>> {
+    const poll = await this.options.pact!.delegation.pollConnectionRequest(
+      request.connectionRequestId,
+      pactRequestOwner,
+    );
+    if (!poll) {
+      return { ok: false, error: { code: "approval_not_found", message: "Connection request not found." } };
+    }
+    switch (poll.kind) {
+      case "pending":
+        return {
+          ok: true,
+          data: {
+            status: "pending",
+            connectionRequestId: request.connectionRequestId,
+            verificationUri: poll.consent.verificationUri,
+            verificationUriComplete: poll.consent.verificationUriComplete,
+            userCode: poll.consent.userCode,
+            missingScopes: poll.consent.missingScopes,
+            contextId: poll.consent.contextId,
+            retryAfterSeconds: poll.retryAfterSeconds,
+          },
+        };
+      case "connected":
+        return { ok: true, data: { status: "connected", connectionRequestId: request.connectionRequestId } };
+      case "denied":
+        return { ok: false, error: { code: "pact_consent_denied", message: "The Brand consent was denied." } };
+      case "expired":
+        return {
+          ok: false,
+          error: { code: "pact_consent_expired", message: "The Brand consent request expired." },
+        };
+      case "failed":
+        return {
+          ok: false,
+          error: { code: "pact_consent_failed", message: poll.request.errorMessage ?? "The Brand consent failed." },
+        };
     }
   }
 

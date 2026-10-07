@@ -40,9 +40,10 @@ import { buildActionSearchIndex } from "../core/action-search.ts";
 import { MarketplaceError, MarketplaceService } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
+import { PactDelegationService, pactRequestOwner } from "../pact/pact-delegation-service.ts";
 import { PactIdentityService } from "../pact/pact-identity-service.ts";
 import { PactService } from "../pact/pact-service.ts";
-import { createMockPactProvider } from "../pact/test/mock-provider.ts";
+import { createMockPactProvider, mockPactDelegationHeader } from "../pact/test/mock-provider.ts";
 import { provider as pactProvider } from "../providers/pact/definition.ts";
 import { actionInputMaxDepth, hashActionRequest, hashIdempotencyKey } from "./actions/action-idempotency.ts";
 import { ActionRunner } from "./actions/action-runner.ts";
@@ -4379,11 +4380,22 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
         keyGraceSeconds: typeof options.pact === "object" ? options.pact.keyGraceSeconds : undefined,
       })
     : undefined;
+  const pactDelegation = options.pact
+    ? new PactDelegationService({
+        requests: requestDatabase.connectionRequestStore,
+        store: connectionStore,
+        registrations: requestDatabase.pactRegistrationStore,
+        identity: pactIdentity!,
+        allowInsecureLoopback: typeof options.pact === "object" ? options.pact.allowInsecureLoopback : true,
+        fetcher: typeof options.pact === "object" ? options.pact.fetcher : undefined,
+      })
+    : undefined;
   const pactService = options.pact
     ? new PactService({
         store: connectionStore,
         registrations: requestDatabase.pactRegistrationStore,
         identity: pactIdentity!,
+        delegation: pactDelegation,
         allowInsecureLoopback: typeof options.pact === "object" ? options.pact.allowInsecureLoopback : true,
         fetcher: typeof options.pact === "object" ? options.pact.fetcher : undefined,
       })
@@ -4436,6 +4448,7 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
           identity: pactIdentity!,
           registrations: requestDatabase.pactRegistrationStore,
           service: pactService!,
+          delegation: pactDelegation!,
         }
       : undefined,
     logger: options.logger,
@@ -5268,5 +5281,125 @@ describe("ConnectServer PACT Brand connections", () => {
       success: true,
       data: { name: "Mock Brand" },
     });
+  });
+
+  it("runs the device-code consent flow end to end over HTTP", async () => {
+    const { app, provider, verifyJwks } = createBrandApp();
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await verifyJwks();
+    await registerBrand(app);
+
+    const connect = await app.request("/v1/connections/pact/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        connectionName: "acme",
+        agentCardUrl: "https://provider.example.com",
+        scopes: ["pact:messages"],
+      }),
+    });
+    expect(connect.status).toBe(202);
+    const consent = (await connect.json()) as {
+      errorCode: string;
+      data: { connectionRequestId: string; verificationUriComplete?: string; userCode?: string; pollUrl: string };
+    };
+    expect(consent.errorCode).toBe("pact_consent_required");
+    expect(consent.data.pollUrl).toBe(`/v1/connection-requests/${consent.data.connectionRequestId}`);
+    expect(consent.data.verificationUriComplete).toContain("user_code=");
+    expect(consent.data.userCode).toEqual(expect.any(String));
+
+    const pending = await app.request(consent.data.pollUrl);
+    expect(pending.status).toBe(202);
+    expect(pending.headers.get("retry-after")).toBe("1");
+    await expect(pending.json()).resolves.toMatchObject({ success: false, errorCode: "pact_consent_required" });
+
+    // The interval gate: a second read inside the window must not re-poll.
+    provider.oauth.pollScript.push({ kind: "approve", grantedScopes: ["pact:messages"] });
+    expect((await app.request(consent.data.pollUrl)).status).toBe(202);
+    const tokenCalls = () =>
+      provider.requests.filter(
+        (request) =>
+          typeof request.body === "object" &&
+          request.body !== null &&
+          (request.body as { form?: { grant_type?: string } }).form?.grant_type !== undefined,
+      ).length;
+    expect(tokenCalls()).toBe(1);
+
+    // Force the next poll window open and the verified grant commits.
+    const requestDatabase = requestDatabases.at(-1)!;
+    const row = await requestDatabase.connectionRequestStore.readPactRequest(
+      consent.data.connectionRequestId,
+      pactRequestOwner,
+    );
+    expect(row).toBeDefined();
+    await requestDatabase.connectionRequestStore.savePactPending(row!.pending, 0);
+    const connected = await app.request(consent.data.pollUrl);
+    expect(connected.status).toBe(200);
+    await expect(connected.json()).resolves.toMatchObject({
+      success: true,
+      data: { status: "connected", service: "pact", appId: expect.any(String) },
+    });
+
+    const listed = await app.request("/api/connections");
+    const brand = (
+      (await listed.json()) as {
+        connectionName?: string;
+        identityOnly?: boolean;
+        profile?: { grantedScopes?: string[] } | null;
+      }[]
+    ).find((connection) => connection.connectionName === "acme");
+    expect(brand?.identityOnly).toBe(false);
+    expect(brand?.profile?.grantedScopes).toEqual(["pact:messages"]);
+
+    // A send now carries the delegation token to the interface origin.
+    const run = await app.request("/v1/actions/pact.send_message", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-oo-connector-alias": "acme" },
+      body: JSON.stringify({ input: { text: "where is my order?" } }),
+    });
+    expect(run.status).toBe(200);
+    expect(provider.requests.at(-1)?.headers[mockPactDelegationHeader]).toMatch(/^Bearer /);
+  });
+
+  it("maps access_denied to 403 and expired_token to 410", async () => {
+    const { app, provider, verifyJwks } = createBrandApp();
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await verifyJwks();
+    await registerBrand(app);
+    const { app: app2, provider: provider2, verifyJwks: verifyJwks2 } = createBrandApp();
+    expect((await app2.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await verifyJwks2();
+    await registerBrand(app2);
+
+    const start = async (
+      targetApp: { request: (input: string, init?: RequestInit) => Promise<Response> | Response },
+      alias: string,
+    ) => {
+      const response = await targetApp.request("/v1/connections/pact/connect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          connectionName: alias,
+          agentCardUrl: "https://provider.example.com",
+          scopes: ["pact:messages"],
+        }),
+      });
+      expect(response.status).toBe(202);
+      return ((await response.json()) as { data: { pollUrl: string } }).data.pollUrl;
+    };
+
+    // access_denied → 403 pact_consent_denied
+    const pollUrl1 = await start(app, "acme");
+    provider.oauth.pollScript.push({ kind: "deny" });
+    const denied = await app.request(pollUrl1);
+    expect(denied.status).toBe(403);
+    await expect(denied.json()).resolves.toMatchObject({ success: false, errorCode: "pact_consent_denied" });
+
+    // expired_token → 410 pact_consent_expired
+    const pollUrl2 = await start(app2, "acme");
+    provider2.oauth.pollScript.push({ kind: "expired" });
+    const expired = await app2.request(pollUrl2);
+    expect(expired.status).toBe(410);
+    await expect(expired.json()).resolves.toMatchObject({ success: false, errorCode: "pact_consent_expired" });
   });
 });

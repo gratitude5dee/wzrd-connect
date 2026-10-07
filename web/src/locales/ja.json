@@ -997,6 +997,18 @@
       "registrationDisabled": "登録は無効です",
       "notRegistered": "登録なし — 接続は拒否されます",
       "identityOnly": "ID のみ",
+      "requestScopes": "さらにスコープを要求",
+      "reauth": "再同意が必要",
+      "consentDenied": "ブランドの同意が拒否されました。",
+      "consentExpired": "ブランドの同意リクエストの有効期限が切れました。",
+      "consentFailed": "ブランドの同意を確認できませんでした。",
+      "consent": {
+        "title": "ブランドのページで承認してください",
+        "hint": "ブランドのログインページを開き、この接続を承認します。Connect がブランドアカウントの認証情報を見ることはありません。",
+        "open": "ブランドページを開く",
+        "userCode": "ユーザーコード",
+        "waiting": "承認を待っています…"
+      },
       "previewFields": {
         "name": "ブランド",
         "provider": "プロバイダーオリジン",
@@ -1012,7 +1024,8 @@
         "alias": "エイリアス",
         "brand": "ブランドオリジン",
         "interface": "インターフェース",
-        "mode": "モード"
+        "mode": "モード",
+        "scopes": "付与されたスコープ"
       }
     }
   }

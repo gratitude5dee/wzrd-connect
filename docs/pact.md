@@ -76,40 +76,97 @@ The connect call:
 3. Refuses when the card's `providerOrigin` has no **enabled** Brand
    registration — `409 pact_registration_required`.
 4. Stores only the card facts (name, version, skills, `interfaceUrl`,
-   `providerOrigin`, `registrationId`, grant scope list). No tokens or keys are
-   persisted for an identity-only Brand.
+   `providerOrigin`, `registrationId`, grant scope list) plus the OAuth
+   endpoints the card advertises (`deviceAuthorizationUrl`, `tokenUrl`,
+   `oauth2MetadataUrl`). No tokens are persisted before consent.
+5. When the request asks for scopes the card advertises, Connect starts the
+   RFC 8628 device flow (next section) and answers `202 pact_consent_required`
+   instead of a connection summary. Scope ids the card does not advertise are
+   rejected with `400 invalid_scope`.
 
 `POST /api/pact/brands/preview` `{agentCardUrl}` returns the same card plus the
 matching registration state so the Console **PACT → Brands** dialog can offer
 scope checkboxes before connect.
 
+## Delegated authority (device flow)
+
+A Brand connection becomes useful once the person delegates scopes to it.
+Connect runs the Provider's RFC 8628 device-authorization flow; the person
+always approves on the Brand's own page — Connect never proxies, frames, or
+observes the Brand login.
+
+1. **Start.** `POST <deviceAuthorizationUrl>` carries a fresh PA-JWT
+   (`client_id` = the Connect issuer) and form body `client_id=<issuer>&scope=<ids>`.
+   The pending request is stored as a `kind: "pact"` `connection_requests` row
+   whose encrypted value holds the device code, poll interval, token URL,
+   requested scopes, connection name, and (for step-ups) the A2A `contextId`.
+2. **Answer.** The caller gets `202 pact_consent_required` with
+   `connectionRequestId`, `verificationUri`/`verificationUriComplete`,
+   `userCode`, `expiresAt`, `pollUrl` (`/v1/connection-requests/<id>`), and for
+   step-ups `missingScopes` + `contextId`.
+3. **Poll.** `GET /v1/connection-requests/:id` drives token-endpoint polling —
+   at most one Provider call per advertised interval, enforced by an atomic
+   `next_poll_at` claim in the store. `authorization_pending` and `slow_down`
+   (interval +5 s) keep the request pending → `202` + `Retry-After`;
+   `access_denied` → `403 pact_consent_denied`; `expired_token` →
+   `410 pact_consent_expired`. Every Provider call sends a freshly minted
+   PA-JWT.
+4. **Commit.** The `access_token` is verified as a JWT before it is stored:
+   RFC 8414 metadata → `jwks_uri` (cached per origin: 5 min positive / 60 s
+   negative / one `kid`-miss refetch; ES256 or RS256 only), `aud` must equal
+   the card's `interfaceUrl`, `client_id` must equal the Connect issuer, `exp`
+   must be in the future. The response `scope` string is the granted subset —
+   it is stored verbatim as `grantedScopes`, and `profile.accountId` records
+   the token `sub`.
+5. **Send.** `message:send` attaches `X-A2A-User-Delegation: Bearer <token>` to
+   the exact interface origin only.
+6. **Refresh.** When `expiresAt` is within 60 s, Connect redeems the
+   `refresh_token` with a PA-JWT (`grant_type=refresh_token`). Refreshes are
+   serialized per connection through a keyed in-flight map. `invalid_grant`
+   clears both tokens, marks the connection `needsReauthorization`, and
+   surfaces `401 pact_unauthorized` with a step-up payload.
+7. **Step-up.** When `message:send` answers `TASK_STATE_AUTH_REQUIRED`, the
+   service reads `pact.missingScopes` + `pact.verificationUriComplete` from the
+   task, requests the union of missing and already-granted scopes, and returns
+   the consent payload with the task's `contextId`. Retrying the same message
+   after consent re-sends in the same context.
+
+Disconnects attempt RFC 7009 revocation best-effort: when the Provider metadata
+advertises `revocation_endpoint`, Connect posts the refresh token there (or the
+access token as a fallback) and the disconnect answer reports `revoked:`
+`done` | `failed` | `unsupported` | `skipped`.
+
 The `pact` catalog provider carries four actions:
 
-| Action                | Operation | Behavior                                             |
-| --------------------- | --------- | ---------------------------------------------------- |
-| `pact.get_agent_card` | `read`    | Returns the stored card summary.                     |
-| `pact.get_delegation` | `read`    | Returns `{identityOnly: true}` in this phase.        |
-| `pact.send_message`   | `write`   | POSTs `${interfaceUrl}/message:send` per Appendix A. |
-| `pact.request_scopes` | `write`   | Step-up plumbing only; full device flow lands later. |
+| Action                | Operation | Behavior                                                                                       |
+| --------------------- | --------- | ---------------------------------------------------------------------------------------------- |
+| `pact.get_agent_card` | `read`    | Returns the stored card summary.                                                               |
+| `pact.get_delegation` | `read`    | Returns `{identityOnly, grantedScopes, expiresAt, needsReauthorization}` — never token values. |
+| `pact.send_message`   | `write`   | POSTs `${interfaceUrl}/message:send` per Appendix A.                                           |
+| `pact.request_scopes` | `write`   | Starts a device flow for additional scopes (step-up).                                          |
 
 `pact.send_message` takes `input.text` (required) and optional
 `input.contextId` (opaque, ≤256 UTF-8 bytes). The request headers are
 `Authorization: Bearer <PA-JWT>`, `A2A-Version: 1.0`, and
-`X-A2A-User-Delegation: Bearer <token>` only when a delegation exists whose
-issuer matches the interface origin — delegation lands in a later phase, so the
-header is absent for identity-only connections. `messageId` is the execution ID.
+`X-A2A-User-Delegation: Bearer <token>` when a delegation grant exists — the
+header only ever posts to the exact interface origin. `messageId` is the
+execution ID.
 
 Response and error mapping:
 
 - `{message}` replies → `{messageId, text, contextId}` where `text` joins the
   `text/plain` parts.
-- `{task}` with `TASK_STATE_AUTH_REQUIRED` → `202 pact_consent_required` with
-  `missingScopes`/`verificationUriComplete` in `data.details`.
+- `{task}` with `TASK_STATE_AUTH_REQUIRED` → step-up: the service starts a
+  device flow for the union of `pact.missingScopes` and already-granted scopes
+  and answers `202 pact_consent_required` with the consent payload (including
+  the task's `contextId` and `pact.verificationUriComplete` when sent).
 - A2A error envelopes map on `error.details[0].reason`:
   `INVALID_PARAMS`/`CONTENT_TYPE_NOT_SUPPORTED` → `400 invalid_input`;
   `UNSUPPORTED_OPERATION` → `409 pact_context_closed` when a `contextId` was
   sent, else `502 pact_provider_unavailable`.
-- `401` → one PA-JWT re-mint and retry, then `pact_unauthorized`.
+- `401` → the delegation is force-refreshed once and the request retried; a
+  second `401` marks the connection `needsReauthorization` and surfaces
+  `pact_unauthorized`.
 - `404`/`405` → the card is refetched; when `interfaceUrl` moved the retry posts
   to the new URL (persisted best-effort), else `502 pact_provider_unavailable`.
 - `429`/`503` keep their `Retry-After` seconds in the error details.
@@ -117,7 +174,9 @@ Response and error mapping:
   the run summary, never PA-JWTs or delegation tokens.
 
 Run logs for these executions carry `connectionSource: "pact"`, and
-`list_connections` reports `source: "pact"` with `identityOnly`.
+`list_connections` reports `source: "pact"` with `identityOnly` (true until a
+delegation grant commits) and `pact.needsReauthorization` when the grant needs
+fresh consent.
 
 ## Runtime token subjects
 

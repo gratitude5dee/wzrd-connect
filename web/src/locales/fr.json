@@ -997,6 +997,18 @@
       "registrationDisabled": "Enregistrement désactivé",
       "notRegistered": "Aucun enregistrement — la connexion sera refusée",
       "identityOnly": "Identité seule",
+      "requestScopes": "Demander plus de scopes",
+      "reauth": "Nouveau consentement requis",
+      "consentDenied": "Le consentement de la marque a été refusé.",
+      "consentExpired": "La demande de consentement de la marque a expiré.",
+      "consentFailed": "Impossible de vérifier le consentement de la marque.",
+      "consent": {
+        "title": "Approuvez sur la page de la marque",
+        "hint": "Ouvrez la page de connexion de la marque et approuvez cette connexion. Connect ne voit jamais les identifiants de votre compte de marque.",
+        "open": "Ouvrir la page de la marque",
+        "userCode": "Code utilisateur",
+        "waiting": "En attente de l’approbation…"
+      },
       "previewFields": {
         "name": "Marque",
         "provider": "Origine du fournisseur",
@@ -1012,7 +1024,8 @@
         "alias": "Alias",
         "brand": "Origine de la marque",
         "interface": "Interface",
-        "mode": "Mode"
+        "mode": "Mode",
+        "scopes": "Scopes accordés"
       }
     }
   }

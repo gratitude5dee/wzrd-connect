@@ -36,7 +36,7 @@ export interface PactCardSkillSnapshot {
   tags?: string[];
 }
 
-/** Delegation grant state; absent until PR5 completes the device flow. */
+/** Delegation grant state; token fields stay absent until the device flow commits. */
 export interface PactConnectionDelegation {
   deviceAuthorizationUrl: string;
   tokenUrl: string;
@@ -49,6 +49,8 @@ export interface PactConnectionDelegation {
   expiresAt?: string;
   tokenIssuer?: string;
   jwksUri?: string;
+  /** Set when the Brand revoked the grant (`invalid_grant`); the summary flips to `reauth_required`. */
+  needsReauthorization?: boolean;
 }
 
 export interface PactConnectionProfile {

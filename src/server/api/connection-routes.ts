@@ -73,6 +73,49 @@ export function createConnectionRoutes({ connections, oauthFlow, saasOAuth, pact
         errorCode: "connection_request_not_found",
         message: "Connection request not found.",
       });
+    if (request.service === "pact" && pact?.delegation) {
+      // Spec §4.5: the read drives the token-endpoint poll, ≤1 call per
+      // provider-minted interval; the consent link goes back with every 202.
+      const poll = await pact.delegation.pollConnectionRequest(id, owner, context.req.raw.signal);
+      if (poll?.kind === "pending") {
+        context.header("Retry-After", String(poll.retryAfterSeconds));
+        return writeRuntimeFailure(context, {
+          status: 202,
+          errorCode: "pact_consent_required",
+          message: "The Brand consent is still pending.",
+          data: {
+            connectionRequestId: id,
+            verificationUri: poll.consent.verificationUri,
+            verificationUriComplete: poll.consent.verificationUriComplete,
+            userCode: poll.consent.userCode,
+            expiresAt: request.expiresAt,
+            pollUrl: `/v1/connection-requests/${id}`,
+            missingScopes: poll.consent.missingScopes,
+            contextId: poll.consent.contextId,
+          },
+        });
+      }
+      if (poll?.kind === "denied") {
+        return writeRuntimeFailure(context, {
+          status: 403,
+          errorCode: "pact_consent_denied",
+          message: "The Brand consent was denied.",
+          data: poll.request,
+        });
+      }
+      if (poll?.kind === "expired") {
+        return writeRuntimeFailure(context, {
+          status: 410,
+          errorCode: "pact_consent_expired",
+          message: "The Brand consent request expired.",
+          data: poll.request,
+        });
+      }
+      if (poll) {
+        // The poll may have committed or failed the row — answer its outcome.
+        return writeRuntimeSuccess(context, poll.request);
+      }
+    }
     return writeRuntimeSuccess(context, request);
   });
   for (const reconnect of [false, true]) {
@@ -87,15 +130,21 @@ export function createConnectionRoutes({ connections, oauthFlow, saasOAuth, pact
         if (target?.source === "pact") return writeRuntimeSuccess(context, await pact.service.reconnectBrand(target));
         const { pactConnectionInput } = await import("./connection-input.ts");
         const input = parseBody(pactConnectionInput, await readJsonBody(context));
-        return writeRuntimeSuccess(
-          context,
-          await pact.service.connectBrand({
-            connectionName: input.connectionName,
-            agentCardUrl: input.agentCardUrl,
-            scopes: input.scopes,
-            signal: context.req.raw.signal,
-          }),
-        );
+        const result = await pact.service.connectBrand({
+          connectionName: input.connectionName,
+          agentCardUrl: input.agentCardUrl,
+          scopes: input.scopes,
+          signal: context.req.raw.signal,
+        });
+        if (result.status === "consent_required") {
+          return writeRuntimeFailure(context, {
+            status: 202,
+            errorCode: "pact_consent_required",
+            message: "The Brand requires user consent for the requested scopes.",
+            data: result.consent,
+          });
+        }
+        return writeRuntimeSuccess(context, result);
       }
       const { oauthConnectionInput } = await import("./connection-input.ts");
       const input = parseBody(oauthConnectionInput, await readJsonBody(context));

@@ -27,6 +27,49 @@ export interface PendingConnectionRequest extends OAuthAuthorizationState {
   target?: Pick<StoredConnection, "id" | "revision">;
 }
 
+/**
+ * Encrypted `connection_requests.value` payload for a PACT device-code flow
+ * (spec §4.5). `kind`/`service` are always `'pact'`; `deviceCode` is a secret
+ * and stays only inside the encrypted value.
+ */
+export interface PendingPactConnectionRequest {
+  connectionRequestId: string;
+  owner: string;
+  connectionName: string;
+  createdAt: string;
+  /** RFC 8628 `expires_in` deadline for the whole consent. */
+  expiresAt: string;
+  deviceCode: string;
+  /** Provider-minted poll interval in seconds; grows by 5 on `slow_down`. */
+  pollIntervalSeconds: number;
+  deviceAuthorizationUrl: string;
+  tokenUrl: string;
+  oauth2MetadataUrl?: string;
+  /** Scope ids → descriptions the card advertised when the flow started. */
+  advertisedScopes: Record<string, string>;
+  /** Card `interfaceUrl` the delegation token's `aud` must equal. */
+  interfaceUrl: string;
+  /** Card provider origin; backs the RFC 8414 metadata URL fallback. */
+  providerOrigin: string;
+  /** Registration audience the PA-JWT is minted for. */
+  audience: string;
+  /** PA-JWT `sub` resolved when the request started. */
+  subject: string;
+  requestedScopes: string[];
+  /** Step-up only: provider-reported missing ids and the context to retry in. */
+  missingScopes?: string[];
+  contextId?: string;
+  verificationUri?: string;
+  verificationUriComplete?: string;
+  userCode?: string;
+}
+
+export interface PendingPactRequestRow {
+  pending: PendingPactConnectionRequest;
+  /** Epoch ms at which the next token-endpoint poll becomes allowed. */
+  nextPollAt: number;
+}
+
 export interface RequestStatement {
   sql: string;
   values: (string | number | null)[];
@@ -144,6 +187,93 @@ export class ConnectionRequestStore {
         values: [errorCode, errorMessage, Date.now(), id],
       },
     ]);
+  }
+
+  /**
+   * Insert a PACT device-code request (`kind = 'pact'`, spec §4.5). A `state`
+   * value is generated because the column is NOT NULL UNIQUE — it is never
+   * exposed, so the OAuth `claim(state)` path can never reach a PACT row.
+   */
+  async createPact(pending: PendingPactConnectionRequest): Promise<void> {
+    const now = Date.parse(pending.createdAt);
+    const value = await this.secretCodec.encode(JSON.stringify(pending));
+    await this.transaction([
+      ...this.retireRequests(pending.owner, "pact", now),
+      {
+        sql: `insert into connection_requests (id, owner, service, state, kind, phase, status, value, expires_at, created_at, updated_at)
+          values (?, ?, 'pact', ?, 'pact', 'pending', 'initiated', ?, ?, ?, ?)`,
+        values: [pending.connectionRequestId, pending.owner, crypto.randomUUID(), value, pending.expiresAt, now, now],
+      },
+    ]);
+  }
+
+  /** Read a live PACT pending request (plus its poll schedule) without claiming it. */
+  async readPactRequest(id: string, owner: string): Promise<PendingPactRequestRow | undefined> {
+    const [[row]] = await this.transaction([
+      {
+        sql: `select value, next_poll_at from connection_requests
+          where id = ? and owner = ? and kind = 'pact' and phase = 'pending' and expires_at > ?`,
+        values: [id, owner, new Date(Date.now() - 86_400_000).toISOString()],
+      },
+    ]);
+    if (!row?.value) return undefined;
+    return {
+      pending: JSON.parse(await this.secretCodec.decode(row.value as string)) as PendingPactConnectionRequest,
+      nextPollAt: Number(row.next_poll_at),
+    };
+  }
+
+  /**
+   * Claim this interval's token-endpoint poll: `next_poll_at` moves forward
+   * atomically, so at most one caller wins each window no matter how many
+   * readers hit the request.
+   */
+  async claimPactPoll(id: string, nextPollAt: number, now: number = Date.now()): Promise<boolean> {
+    const [[row]] = await this.transaction([
+      {
+        sql: `update connection_requests set next_poll_at = ?, updated_at = ?
+          where id = ? and kind = 'pact' and phase = 'pending' and next_poll_at <= ? returning id`,
+        values: [nextPollAt, now, id, now],
+      },
+    ]);
+    return !!row;
+  }
+
+  /** Persist a changed pending payload and its next poll time (e.g. after `slow_down`). */
+  async savePactPending(pending: PendingPactConnectionRequest, nextPollAt: number): Promise<boolean> {
+    const value = await this.secretCodec.encode(JSON.stringify(pending));
+    const [[row]] = await this.transaction([
+      {
+        sql: `update connection_requests set value = ?, next_poll_at = ?, updated_at = ?
+          where id = ? and kind = 'pact' and phase = 'pending' returning id`,
+        values: [value, nextPollAt, Date.now(), pending.connectionRequestId],
+      },
+    ]);
+    return !!row;
+  }
+
+  /** Mark a PACT request `connected` and record the connection it produced. */
+  async completePact(id: string, connectionId: string): Promise<boolean> {
+    const [[row]] = await this.transaction([
+      {
+        sql: `update connection_requests set phase = 'completed', status = 'connected', app_id = ?,
+          value = null, updated_at = ? where id = ? and kind = 'pact' and phase = 'pending' returning id`,
+        values: [connectionId, Date.now(), id],
+      },
+    ]);
+    return !!row;
+  }
+
+  /** Mark a PACT request terminal-failed (`access_denied`, `expired_token`, …). */
+  async failPact(id: string, errorCode: string, errorMessage: string): Promise<boolean> {
+    const [[row]] = await this.transaction([
+      {
+        sql: `update connection_requests set phase = 'completed', status = 'failed', error_code = ?, error_message = ?,
+          value = null, updated_at = ? where id = ? and kind = 'pact' and phase = 'pending' returning id`,
+        values: [errorCode, errorMessage, Date.now(), id],
+      },
+    ]);
+    return !!row;
   }
 
   async complete(

@@ -997,6 +997,18 @@
       "registrationDisabled": "註冊已停用",
       "notRegistered": "未註冊 — 連線將被拒絕",
       "identityOnly": "僅身分",
+      "requestScopes": "申請更多 scope",
+      "reauth": "需要重新授權",
+      "consentDenied": "品牌拒絕了授權。",
+      "consentExpired": "品牌授權請求已過期。",
+      "consentFailed": "無法查詢品牌授權狀態。",
+      "consent": {
+        "title": "請在品牌頁面完成授權",
+        "hint": "開啟品牌的登入頁面並核准此連線。Connect 永遠不會看到你的品牌帳戶憑證。",
+        "open": "開啟品牌頁面",
+        "userCode": "使用者代碼",
+        "waiting": "等待授權…"
+      },
       "previewFields": {
         "name": "品牌",
         "provider": "提供者來源",
@@ -1012,7 +1024,8 @@
         "alias": "別名",
         "brand": "品牌來源",
         "interface": "介面",
-        "mode": "模式"
+        "mode": "模式",
+        "scopes": "已授權的 scope"
       }
     }
   }
