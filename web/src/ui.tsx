@@ -1,6 +1,7 @@
 import type { AppLang } from "./i18n";
 import type {
   AppData,
+  ApprovalListPage,
   ConnectionRecord,
   OAuthConfig,
   ProviderDefinition,
@@ -24,6 +25,7 @@ import {
   Moon,
   RefreshCw,
   Settings,
+  ShieldCheck,
   Sun,
   TerminalSquare,
 } from "lucide-react";
@@ -32,6 +34,7 @@ import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-route
 import { AccessPage } from "./access-page";
 import { ActionsPage } from "./actions-page";
 import { ApiError, apiGet, apiPost } from "./api";
+import { ApprovalsPage } from "./approvals-page";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
 import { normalizeGatewayUrl } from "./client-onboarding";
 import { persistLang, supportedLangs } from "./i18n";
@@ -56,6 +59,7 @@ const navItems = [
   { path: "/oauth-apps", labelKey: "nav.oauthApps", icon: Fingerprint },
   { path: "/actions", labelKey: "nav.actions", icon: TerminalSquare },
   { path: "/runs", labelKey: "nav.runs", icon: Activity },
+  { path: "/approvals", labelKey: "nav.approvals", icon: ShieldCheck, badge: true },
   { path: "/access", labelKey: "nav.access", icon: KeyRound },
   { path: "/resources", labelKey: "nav.docs", icon: BookOpen },
 ] as const;
@@ -166,6 +170,7 @@ export async function loadRuntimeData(
     runPage,
     marketplace,
     providerPreferences,
+    pendingApprovals,
   ] = await Promise.all([
     catalogRequest,
     apiGet<ConnectionRecord[]>("/api/connections"),
@@ -175,6 +180,10 @@ export async function loadRuntimeData(
     apiGet<RunLogPage>("/api/runs"),
     apiGet<import("./model").MarketplaceState>("/api/marketplace"),
     apiGet<import("./model").ProviderPreference[]>("/api/provider-preferences"),
+    // Older runtimes may not serve the approvals API; the badge just stays at 0.
+    apiGet<ApprovalListPage>("/api/approvals?status=pending")
+      .then((page) => page.items.length)
+      .catch(() => 0),
   ]);
 
   return {
@@ -189,6 +198,7 @@ export async function loadRuntimeData(
       runsNextCursor: runPage.nextCursor,
       marketplace,
       providerPreferences,
+      pendingApprovals,
     },
   };
 }
@@ -380,6 +390,7 @@ function AppShell(props: {
           <nav className="sidebar-nav" aria-label={t("shell.primaryNav")}>
             {navItems.map((item) => {
               const Icon = item.icon;
+              const badge = "badge" in item && item.badge ? (props.data.pendingApprovals ?? 0) : 0;
               return (
                 <NavLink
                   key={item.path}
@@ -388,6 +399,7 @@ function AppShell(props: {
                 >
                   <Icon size={16} />
                   <span>{t(item.labelKey)}</span>
+                  {badge > 0 ? <span className="nav-badge">{badge}</span> : null}
                 </NavLink>
               );
             })}
@@ -483,6 +495,8 @@ function AppShell(props: {
               path="/runs"
               element={<RunsPage initialRuns={props.data.runs} nextCursor={props.data.runsNextCursor} />}
             />
+            <Route path="/approvals" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
+            <Route path="/approvals/:approvalId" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
             <Route
               path="/access"
               element={
@@ -656,6 +670,9 @@ function headingForPath(pathname: string): string {
   }
   if (section === "runs") {
     return "runs";
+  }
+  if (section === "approvals") {
+    return "approvals";
   }
   if (section === "access") {
     return "access";

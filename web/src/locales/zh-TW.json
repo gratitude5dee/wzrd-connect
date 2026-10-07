@@ -40,7 +40,8 @@
     "actions": "動作",
     "runs": "執行記錄",
     "access": "API 金鑰",
-    "docs": "接入指南"
+    "docs": "接入指南",
+    "approvals": "核准"
   },
   "shell": {
     "invalidUnlockToken": "請輸入有效的管理員權杖以解鎖控制台。",
@@ -79,6 +80,9 @@
       },
       "resources": {
         "title": "接入指南"
+      },
+      "approvals": {
+        "title": "核准"
       }
     },
     "settings": "設定",
@@ -861,5 +865,63 @@
       "auth_error": "專案金鑰無效"
     },
     "retry": "重新檢查"
+  },
+  "approvals": {
+    "title": "核准收件匣",
+    "description": "在向供應商發出請求前暫停、等待人工決定的動作與代理呼叫。",
+    "loadFailed": "無法載入核准。",
+    "inboxEmpty": "沒有待處理的核准",
+    "inboxEmptyHint": "被核准政策攔截的請求會顯示在這裡。",
+    "historyEmpty": "沒有核准歷史",
+    "historyEmptyHint": "已決定的核准會進入這裡。",
+    "grantsEmpty": "沒有生效中的授權",
+    "grantsEmptyHint": "帶授權核准可讓相同請求在有效期內略過核准。",
+    "tabs": {
+      "inbox": "收件匣",
+      "history": "歷史",
+      "grants": "授權"
+    },
+    "columns": {
+      "action": "動作",
+      "operation": "操作類型",
+      "connection": "連線",
+      "caller": "呼叫方",
+      "preview": "預覽",
+      "created": "建立時間",
+      "expires": "到期時間",
+      "decision": "決定",
+      "status": "狀態"
+    },
+    "status": {
+      "pending": "待處理",
+      "approved": "已核准",
+      "denied": "已拒絕",
+      "expired": "已過期",
+      "executing": "執行中",
+      "executed": "已執行",
+      "failed": "失敗"
+    },
+    "proxyKind": "代理",
+    "approve": "核准",
+    "deny": "拒絕",
+    "approveTitle": "核准請求",
+    "approveDescription": "呼叫方下次輪詢 {{action}} 的核准時會執行已儲存的請求。",
+    "approveFailed": "無法核准該請求。",
+    "denyTitle": "拒絕請求",
+    "denyDescription": "呼叫方下次輪詢 {{action}} 的核准時會回傳 approval_denied。",
+    "denyFailed": "無法拒絕該請求。",
+    "denyReason": "原因（選填）",
+    "decisionReason": "決定原因",
+    "grant": "授權",
+    "grantToggle": "同時授權未來的相同請求",
+    "grantUnavailable": "此請求沒有執行階段權杖，無法建立持久授權。",
+    "grantTtl": "授權有效期（分鐘）",
+    "grantMaxUses": "授權最大使用次數（0 = 不限）",
+    "grantAllowDestructive": "允許破壞性操作",
+    "grants": {
+      "uses": "使用次數",
+      "revoke": "撤銷"
+    },
+    "revokeFailed": "無法撤銷授權。"
   }
 }

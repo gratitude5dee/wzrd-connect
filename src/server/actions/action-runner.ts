@@ -1,11 +1,12 @@
 import type { CatalogStore } from "../../catalog-store.ts";
 import type { ConnectionService, ConnectionSummary, ExecutionConnection } from "../../connection-service.ts";
-import type { ActionPolicyDecision, ActionPolicySnapshot } from "../../core/action-policy.ts";
+import type { ActionPolicyDecision, ActionPolicySnapshot, ApprovalCheck } from "../../core/action-policy.ts";
 import type { ProviderHttpDispatchOptions } from "../../core/provider-http-dispatch.ts";
 import type { RuntimeLogger, ExecutionContext, ExecutionResult, TransitFileWriter } from "../../core/types.ts";
 import type { MarketplaceService } from "../../marketplace/marketplace-service.ts";
 import type { IProviderLoader } from "../../providers/provider-loader.ts";
 import type { SaasExecutionService } from "../../saas/saas-execution-service.ts";
+import type { ApprovalGate, ApprovalInterception } from "../approvals/approval-gate.ts";
 import type { IRunLogStore, RunLog, RunLogCaller, RunLogListInput, RunLogPage } from "../storage/runtime-store.ts";
 
 import { ConnectionError } from "../../connection-service.ts";
@@ -40,6 +41,12 @@ export interface RunActionInput {
   policy: ActionPolicySnapshot;
   runtimeTokenId?: string;
   signal?: AbortSignal;
+  /** Per-request approval gate; absent means the approval overlay never runs. */
+  approvalGate?: ApprovalGate;
+  /** Set on execute-on-poll calls: the stored approval already answered the overlay. */
+  bypassApproval?: boolean;
+  /** Approval record this run executes on behalf of; lands on the run log. */
+  approvalId?: string;
 }
 
 export interface ActionRunResult {
@@ -50,6 +57,11 @@ export interface ActionRunResult {
   retryAfter?: string;
   result: ExecutionResult;
   connection?: ConnectionSummary;
+  /** Present when the approval overlay evaluated this run; `interception` marks a recorded pending approval. */
+  approval?: {
+    check: ApprovalCheck;
+    interception?: ApprovalInterception;
+  };
 }
 
 /**
@@ -101,6 +113,8 @@ export class ActionRunner {
     let remoteExecutionId: string | undefined;
     let failureStatus: SaasError["status"] | undefined;
     let retryAfter: string | undefined;
+    let approvalId: string | undefined = input.approvalId;
+    let approval: ActionRunResult["approval"];
     if (!policy.allowed) {
       result = { ok: false, error: { code: policy.code, message: policy.message } };
     } else if (input.signal?.aborted) {
@@ -127,70 +141,104 @@ export class ActionRunner {
             },
           };
         } else {
-          connection = await this.options.connections.resolveForExecution(
-            action.service,
-            input.connectionName,
-            input.connectionId,
-          );
-          input.signal?.throwIfAborted();
-          const targetPolicy =
-            connection.summary?.authType === "no_auth"
+          // Approval checkpoint: after the allow/block policy (and connection policy) passed,
+          // before credential lookup. `bypassApproval` skips the overlay on execute-on-poll calls —
+          // re-evaluating it there would gate an already-approved request behind a second approval.
+          const approvalCheck =
+            input.bypassApproval || !input.approvalGate
               ? undefined
-              : input.policy.evaluateConnection(connection.summary?.id);
-          if (targetPolicy && !targetPolicy.allowed) {
-            policy = targetPolicy;
-            throw new ConnectionError(targetPolicy.code, targetPolicy.message);
+              : await input.policy.evaluateApproval(
+                  { id: action.id, operationType: action.operationType, connectionId: summary?.id },
+                  input.approvalGate.lookup,
+                );
+          if (approvalCheck && policy.allowed) {
+            policy = { allowed: true, checks: policy.checks, approval: approvalCheck };
           }
-          const executor =
-            action.execution.locallyExecutable && connection.kind === "local"
-              ? await this.options.providerLoader.loadActionExecutor(
-                  action.service,
-                  action.id,
-                  this.options.catalog.providers.find((provider) => provider.service === action.service)?.displayName,
-                )
-              : undefined;
-          input.signal?.throwIfAborted();
-          const saasReference = connection.kind === "saas" ? connection.reference : undefined;
-          const resolvedConnection = connection;
-          result = await withProviderHttpDispatchResult(
-            {
-              operation: "action",
-              service: action.service,
+          if (approvalCheck?.outcome === "approval_required" && input.approvalGate) {
+            const interception = await input.approvalGate.requireApproval({
+              kind: "action",
               actionId: action.id,
-              executionId,
-              connectionId: connection.summary?.id,
-              connectionName: connection.summary?.connectionName,
-            },
-            () =>
-              executeProviderAction(
-                action,
-                saasReference
-                  ? async (actionInput) => {
-                      if (!this.options.saas)
-                        throw new SaasError("oauth_source_unavailable", "SaaS execution is unavailable.", 503);
-                      const remote = await this.options.saas.executeAction(
-                        saasReference,
-                        action.service,
-                        action.id,
-                        actionInput,
-                        input.signal,
-                      );
-                      remoteExecutionId = remote.executionId;
-                      return { ok: true, output: remote.output };
-                    }
-                  : resolvedConnection.kind === "marketplace"
-                    ? (actionInput) => this.options.marketplace!.execute(action.id, actionInput, input.signal)
-                    : executor,
-                input.input,
-                this.createExecutionContext(
-                  resolvedConnection.kind === "local" ? resolvedConnection.getCredential : async () => undefined,
-                  input.signal,
+              service: action.service,
+              operationType: action.operationType,
+              caller: input.caller,
+              request: {
+                input: input.input,
+                connectionName: summary?.connectionName ?? input.connectionName,
+                connectionId: summary?.id,
+              },
+            });
+            approvalId = interception.approval.id;
+            approval = { check: approvalCheck, interception };
+            result = {
+              ok: false,
+              error: { code: "approval_required", message: "Action requires approval before execution." },
+            };
+          } else {
+            connection = await this.options.connections.resolveForExecution(
+              action.service,
+              input.connectionName,
+              input.connectionId,
+            );
+            input.signal?.throwIfAborted();
+            const targetPolicy =
+              connection.summary?.authType === "no_auth"
+                ? undefined
+                : input.policy.evaluateConnection(connection.summary?.id);
+            if (targetPolicy && !targetPolicy.allowed) {
+              policy = targetPolicy;
+              throw new ConnectionError(targetPolicy.code, targetPolicy.message);
+            }
+            const executor =
+              action.execution.locallyExecutable && connection.kind === "local"
+                ? await this.options.providerLoader.loadActionExecutor(
+                    action.service,
+                    action.id,
+                    this.options.catalog.providers.find((provider) => provider.service === action.service)?.displayName,
+                  )
+                : undefined;
+            input.signal?.throwIfAborted();
+            const saasReference = connection.kind === "saas" ? connection.reference : undefined;
+            const resolvedConnection = connection;
+            result = await withProviderHttpDispatchResult(
+              {
+                operation: "action",
+                service: action.service,
+                actionId: action.id,
+                executionId,
+                connectionId: connection.summary?.id,
+                connectionName: connection.summary?.connectionName,
+              },
+              () =>
+                executeProviderAction(
+                  action,
+                  saasReference
+                    ? async (actionInput) => {
+                        if (!this.options.saas)
+                          throw new SaasError("oauth_source_unavailable", "SaaS execution is unavailable.", 503);
+                        const remote = await this.options.saas.executeAction(
+                          saasReference,
+                          action.service,
+                          action.id,
+                          actionInput,
+                          input.signal,
+                        );
+                        remoteExecutionId = remote.executionId;
+                        return { ok: true, output: remote.output };
+                      }
+                    : resolvedConnection.kind === "marketplace"
+                      ? (actionInput) => this.options.marketplace!.execute(action.id, actionInput, input.signal)
+                      : executor,
+                  input.input,
+                  this.createExecutionContext(
+                    resolvedConnection.kind === "local" ? resolvedConnection.getCredential : async () => undefined,
+                    input.signal,
+                  ),
                 ),
-              ),
-            this.options.providerHttpDispatch,
-          );
-          if (input.signal?.aborted) {
-            result = cancelledExecutionResult();
+              this.options.providerHttpDispatch,
+            );
+            if (input.signal?.aborted) {
+              result = cancelledExecutionResult();
+            }
           }
         }
       } catch (error) {
@@ -237,6 +285,7 @@ export class ActionRunner {
       connectionId: connection?.summary?.id,
       connectionProfile: connection?.summary?.profile,
       runtimeTokenId: input.runtimeTokenId,
+      approvalId,
       policy,
       inputSummary: summarizeForRunLog(input.input),
       outputSummary: result.ok ? summarizeForRunLog(result.output) : undefined,
@@ -279,6 +328,7 @@ export class ActionRunner {
       auditPersisted,
       result,
       connection: connection?.summary,
+      approval,
     };
   }
 

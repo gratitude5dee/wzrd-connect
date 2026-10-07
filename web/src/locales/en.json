@@ -40,7 +40,8 @@
     "actions": "Actions",
     "runs": "Runs",
     "access": "API Key",
-    "docs": "Connect clients"
+    "docs": "Connect clients",
+    "approvals": "Approvals"
   },
   "shell": {
     "invalidUnlockToken": "Enter a valid admin token to unlock the console.",
@@ -79,6 +80,9 @@
       },
       "resources": {
         "title": "Connect clients"
+      },
+      "approvals": {
+        "title": "Approvals"
       }
     },
     "settings": "Settings",
@@ -861,5 +865,63 @@
       "auth_error": "Invalid project key"
     },
     "retry": "Check again"
+  },
+  "approvals": {
+    "title": "Approval inbox",
+    "description": "Actions and proxy calls that pause for a human decision before any provider request runs.",
+    "loadFailed": "Could not load approvals.",
+    "inboxEmpty": "No pending approvals",
+    "inboxEmptyHint": "Requests gated by the approval policy appear here.",
+    "historyEmpty": "No approval history",
+    "historyEmptyHint": "Decided approvals land here.",
+    "grantsEmpty": "No active grants",
+    "grantsEmptyHint": "Approving with a grant lets identical requests skip approval for its lifetime.",
+    "tabs": {
+      "inbox": "Inbox",
+      "history": "History",
+      "grants": "Grants"
+    },
+    "columns": {
+      "action": "Action",
+      "operation": "Operation",
+      "connection": "Connection",
+      "caller": "Caller",
+      "preview": "Preview",
+      "created": "Created",
+      "expires": "Expires",
+      "decision": "Decision",
+      "status": "Status"
+    },
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "denied": "Denied",
+      "expired": "Expired",
+      "executing": "Executing",
+      "executed": "Executed",
+      "failed": "Failed"
+    },
+    "proxyKind": "Proxy",
+    "approve": "Approve",
+    "deny": "Deny",
+    "approveTitle": "Approve request",
+    "approveDescription": "The stored request executes the next time the caller polls {{action}}'s approval.",
+    "approveFailed": "Could not approve the request.",
+    "denyTitle": "Deny request",
+    "denyDescription": "The caller's next poll of the approval for {{action}} returns approval_denied.",
+    "denyFailed": "Could not deny the request.",
+    "denyReason": "Reason (optional)",
+    "decisionReason": "Decision reason",
+    "grant": "Grant",
+    "grantToggle": "Also grant future identical requests",
+    "grantUnavailable": "This request has no runtime token, so no durable grant can be created.",
+    "grantTtl": "Grant TTL (minutes)",
+    "grantMaxUses": "Grant max uses (0 = unlimited)",
+    "grantAllowDestructive": "Allow destructive operations",
+    "grants": {
+      "uses": "Uses",
+      "revoke": "Revoke"
+    },
+    "revokeFailed": "Could not revoke the grant."
   }
 }

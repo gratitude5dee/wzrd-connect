@@ -40,7 +40,8 @@
     "actions": "アクション",
     "runs": "実行履歴",
     "access": "API Key",
-    "docs": "接続ガイド"
+    "docs": "接続ガイド",
+    "approvals": "承認"
   },
   "shell": {
     "invalidUnlockToken": "有効な管理者 token を入力してコンソールをロック解除してください。",
@@ -79,6 +80,9 @@
       },
       "resources": {
         "title": "接続ガイド"
+      },
+      "approvals": {
+        "title": "承認"
       }
     },
     "settings": "設定",
@@ -861,5 +865,63 @@
       "auth_error": "プロジェクトキーが無効"
     },
     "retry": "再確認"
+  },
+  "approvals": {
+    "title": "承認インボックス",
+    "description": "プロバイダー呼び出しの前に人間の判断を待つために一時停止したアクションとプロキシ呼び出し。",
+    "loadFailed": "承認を読み込めませんでした。",
+    "inboxEmpty": "保留中の承認はありません",
+    "inboxEmptyHint": "承認ポリシーにブロックされたリクエストはここに表示されます。",
+    "historyEmpty": "承認履歴はありません",
+    "historyEmptyHint": "決定済みの承認はここに移ります。",
+    "grantsEmpty": "有効な許可はありません",
+    "grantsEmptyHint": "許可付きで承認すると、同じリクエストは有効期間中は承認をスキップします。",
+    "tabs": {
+      "inbox": "受信",
+      "history": "履歴",
+      "grants": "許可"
+    },
+    "columns": {
+      "action": "アクション",
+      "operation": "操作",
+      "connection": "接続",
+      "caller": "呼び出し元",
+      "preview": "プレビュー",
+      "created": "作成日時",
+      "expires": "有効期限",
+      "decision": "判定",
+      "status": "状態"
+    },
+    "status": {
+      "pending": "保留中",
+      "approved": "承認済み",
+      "denied": "拒否済み",
+      "expired": "期限切れ",
+      "executing": "実行中",
+      "executed": "実行済み",
+      "failed": "失敗"
+    },
+    "proxyKind": "プロキシ",
+    "approve": "承認",
+    "deny": "拒否",
+    "approveTitle": "リクエストを承認",
+    "approveDescription": "保存されたリクエストは、呼び出し元が {{action}} の承認を次回ポーリングしたときに実行されます。",
+    "approveFailed": "リクエストを承認できませんでした。",
+    "denyTitle": "リクエストを拒否",
+    "denyDescription": "呼び出し元が {{action}} の承認を次回ポーリングすると approval_denied が返ります。",
+    "denyFailed": "リクエストを拒否できませんでした。",
+    "denyReason": "理由（任意）",
+    "decisionReason": "判定理由",
+    "grant": "許可",
+    "grantToggle": "今後の同一リクエストにも許可を与える",
+    "grantUnavailable": "このリクエストにはランタイムトークンがないため、永続的な許可を作成できません。",
+    "grantTtl": "許可の有効期間（分）",
+    "grantMaxUses": "許可の最大使用回数（0 = 無制限）",
+    "grantAllowDestructive": "破壊的操作を許可",
+    "grants": {
+      "uses": "使用回数",
+      "revoke": "取り消す"
+    },
+    "revokeFailed": "許可を取り消せませんでした。"
   }
 }

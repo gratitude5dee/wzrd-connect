@@ -17,6 +17,7 @@ import { ProviderLoader } from "../providers/provider-loader.ts";
 import { executorModules } from "../providers/registry.cloudflare.generated.ts";
 import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
 import { isConsoleShellPath } from "./api/console-paths.ts";
+import { DEFAULT_APPROVAL_TTL_SECONDS, ApprovalService } from "./approvals/approval-service.ts";
 import {
   loadCatalogFromAssets,
   serveActionsFromAssets,
@@ -51,6 +52,11 @@ export default {
       requests: database.connectionRequestStore,
       logger: workerLogger,
     });
+    const approvals = new ApprovalService({
+      store: database.approvalStore,
+      ttlSeconds: readPositiveInteger(env.OOMOL_CONNECT_APPROVAL_TTL_SECONDS, DEFAULT_APPROVAL_TTL_SECONDS),
+      logger: workerLogger,
+    });
     const triggerCleanup = async () => {
       if (!(await database.triggerStore.listFlowTriggersForMaintenance(Date.now(), 1)).length) return;
       const origin = env.OOMOL_CONNECT_ORIGIN ?? "https://connector.invalid";
@@ -59,7 +65,7 @@ export default {
       );
       await triggerMaintenance.run();
     };
-    ctx.waitUntil(Promise.all([cleanup.run(), triggerCleanup()]).then(() => undefined));
+    ctx.waitUntil(Promise.all([cleanup.run(), triggerCleanup(), approvals.runMaintenance()]).then(() => undefined));
   },
   async fetch(request: Request, env: CloudflareEnv, _ctx: CloudflareExecutionContext): Promise<Response> {
     setPrivateNetworkAccessAllowed(parsePrivateNetworkAccessFlag(env.OOMOL_CONNECT_ALLOW_PRIVATE_NETWORK));
@@ -134,6 +140,7 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
       approvalExemptActions: parseActionPolicyList(env.OOMOL_CONNECT_APPROVAL_EXEMPT_ACTIONS),
     }),
     allowedCustomOAuth: parseActionPolicyList(env.OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH),
+    approvalTtlSeconds: readPositiveInteger(env.OOMOL_CONNECT_APPROVAL_TTL_SECONDS, DEFAULT_APPROVAL_TTL_SECONDS),
     logger: workerLogger,
     computeRuntimeAuthConfigured: false,
     // Cloudflare compresses on egress itself: Response defaults to
@@ -202,6 +209,7 @@ function createCacheKey(env: CloudflareEnv, publicOrigin: string): string {
     transitFileTtlSeconds: env.OOMOL_CONNECT_TRANSIT_FILE_TTL_SECONDS ?? "",
     transitFileMaxBytes: env.OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES ?? "",
     runLimit: env.OOMOL_CONNECT_RUN_LIMIT ?? "",
+    approvalTtlSeconds: env.OOMOL_CONNECT_APPROVAL_TTL_SECONDS ?? "",
   });
 }
 

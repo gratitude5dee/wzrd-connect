@@ -1,0 +1,72 @@
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--warning) 20%, transparent);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.approvals-toolbar {
+  align-items: flex-start;
+}
+
+.approval-action code,
+.approval-preview {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.approval-preview {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-detail {
+  margin-bottom: 12px;
+}
+
+.approval-detail-fields {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.approval-detail-fields dt {
+  color: var(--muted-foreground);
+}
+
+.approval-detail-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.approval-preview-block {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+tr[data-highlight] {
+  outline: 2px solid color-mix(in oklab, var(--warning) 50%, transparent);
+  outline-offset: -2px;
+}
+
+.field-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

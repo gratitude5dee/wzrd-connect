@@ -4,6 +4,7 @@ import type { ActionPolicyDecision, ActionPolicySnapshot } from "./core/action-p
 import type { ActionSearchIndexProvider } from "./core/action-search.ts";
 import type { AuthType, CredentialProfile, JsonSchema } from "./core/types.ts";
 import type { ActionRunner, ActionRunResult } from "./server/actions/action-runner.ts";
+import type { ApprovalGate } from "./server/approvals/approval-gate.ts";
 import type { RuntimeGrant } from "./server/storage/runtime-token-service.ts";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 
@@ -24,8 +25,21 @@ export interface IMcpServerOptions {
   actionSearch?: ActionSearchIndexProvider;
   getPolicySnapshot(): Promise<ActionPolicySnapshot>;
   runtimeGrant?: RuntimeGrant;
+  /** Public origin, used to build approval console deep links. */
+  publicOrigin?: string;
+  /** Approval checkpoint for gated actions; omitted when the approvals store is not configured. */
+  approvalGate?: ApprovalGate;
+  /** Reads one approval for the calling owner (the `get_approval` tool); registered only when set. */
+  pollApproval?: (query: ApprovalToolQuery) => Promise<ApprovalToolPayload>;
   signal?: AbortSignal;
 }
+
+export interface ApprovalToolQuery {
+  approvalId?: string;
+  connectionRequestId?: string;
+}
+
+export type ApprovalToolPayload = Record<string, unknown>;
 
 /**
  * Compact tool descriptor used by HTTP previews and docs.
@@ -122,6 +136,19 @@ const mcpToolConfigs = {
       connectionName: optionalConnectionNameSchema,
     }),
   },
+  get_approval: {
+    title: "Get Approval",
+    description:
+      "Check one approval checkpoint by approvalId (or connectionRequestId). Only the request's creator may read it. A pending or executing approval returns status pending/executing with its expiry; an approved approval executes once on the first poll and returns the action result; later reads replay the stored result. Denied and expired approvals return errors. Approval and denial happen in the Connect console, never through this tool.",
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    inputSchema: z.object({
+      approvalId: z.string().optional().describe("Approval id returned by an execute_action pause object."),
+      connectionRequestId: z
+        .string()
+        .optional()
+        .describe("Connection request id the approval was created for, when known."),
+    }),
+  },
 };
 
 /**
@@ -129,14 +156,16 @@ const mcpToolConfigs = {
  *
  * The local runtime can contain hundreds of provider actions, so MCP exposes a
  * small set of search/read/execute tools instead of one tool per provider
- * action.
+ * action. `get_approval` only exists when the approvals store is configured.
  */
-export function listMcpToolSummaries(): IMcpToolSummary[] {
-  return Object.entries(mcpToolConfigs).map(([name, config]) => ({
-    name,
-    title: config.title,
-    description: config.description,
-  }));
+export function listMcpToolSummaries(approvalsEnabled = false): IMcpToolSummary[] {
+  return Object.entries(mcpToolConfigs)
+    .filter(([name]) => name !== "get_approval" || approvalsEnabled)
+    .map(([name, config]) => ({
+      name,
+      title: config.title,
+      description: config.description,
+    }));
 }
 
 /**
@@ -172,6 +201,15 @@ export function createMcpServer(options: IMcpServerOptions): McpServer {
   server.registerTool("execute_action", mcpToolConfigs.execute_action, async ({ actionId, input, connectionName }) =>
     toolResult(await executeAction(options, actionId, input, connectionName)),
   );
+
+  if (options.pollApproval) {
+    server.registerTool("get_approval", mcpToolConfigs.get_approval, async ({ approvalId, connectionRequestId }) => {
+      if (Boolean(approvalId) === Boolean(connectionRequestId)) {
+        return toolResult(errorPayload("invalid_input", "Pass exactly one of approvalId or connectionRequestId."));
+      }
+      return toolResult((await options.pollApproval!({ approvalId, connectionRequestId })) as ToolPayload);
+    });
+  }
 
   return server;
 }
@@ -353,9 +391,26 @@ async function executeAction(
     policy,
     runtimeTokenId: options.runtimeGrant?.tokenId,
     signal: options.signal,
+    approvalGate: options.approvalGate,
   });
   if (!run) {
     return errorPayload("unknown_action", `Unknown action: ${actionId}`);
+  }
+  if (run.approval?.interception) {
+    const record = run.approval.interception.approval;
+    return {
+      ok: true,
+      data: {
+        status: "approval_required",
+        approvalId: record.id,
+        pollWith: "get_approval",
+        approvalUrl: `${options.publicOrigin ?? ""}/approvals/${record.id}`,
+        operationType: record.operationType,
+        expiresAt: record.expiresAt,
+        preview: record.preview,
+      },
+      ...createExecutionMeta(run),
+    };
   }
   const executionMeta = createExecutionMeta(run);
   if (!run.result.ok) {

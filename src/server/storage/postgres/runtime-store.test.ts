@@ -105,6 +105,7 @@ describe("PostgreSQL migrations with PGlite", () => {
           { name: "0016_trigger_policy.sql" },
           { name: "0017_trigger_subscriptions.sql" },
           { name: "0018_token_approval_policy.sql" },
+          { name: "0019_approvals.sql" },
         ],
       });
 
@@ -169,6 +170,7 @@ describe("PostgreSQL migrations with a custom migration source", () => {
           { name: "0016_trigger_policy.sql" },
           { name: "0017_trigger_subscriptions.sql" },
           { name: "0018_token_approval_policy.sql" },
+          { name: "0019_approvals.sql" },
           { name: "9998_custom.sql" },
         ],
       });

@@ -25,6 +25,7 @@ import type { StatementSync } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { parseRuntimeActionHttpResult } from "../../api/runtime-api.ts";
 import { PlainTextSecretCodec } from "../../secrets/secret-codec-core.ts";
+import { ApprovalStore } from "../approval-store.ts";
 import { ConnectionRequestStore } from "../connection-request-store.ts";
 import { SqlConnectionStore } from "../connection-store.ts";
 import { defaultMigrationSource } from "../migration-source.ts";
@@ -97,6 +98,7 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
   readonly runLogStore: SqliteRunLogStore;
   readonly idempotencyStore: SqliteIdempotencyStore;
   readonly marketplaceStore: SqliteMarketplaceStore;
+  readonly approvalStore: ApprovalStore;
 
   private readonly database: DatabaseSync;
   private readonly secretCodec: ISecretCodec;
@@ -113,6 +115,7 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
     this.connectionStore = new SqlConnectionStore(transaction, this.secretCodec);
     this.triggerStore = new SqlTriggerStore(transaction, this.secretCodec);
     this.saasProjectStore = new SaasProjectStore(transaction, this.secretCodec);
+    this.approvalStore = new ApprovalStore(transaction, this.secretCodec);
     this.oauthClientConfigStore = new SqliteOAuthClientConfigStore(this.database, this.secretCodec);
     this.oauthStateStore = new SqliteOAuthStateStore(this.database, this.secretCodec);
     this.runtimeTokenStore = new SqliteRuntimeTokenStore(this.database);
@@ -184,6 +187,15 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
         this.secretCodec,
         nextSecretCodec,
       );
+      const approvalRequests = await Promise.all(
+        this.database
+          .prepare("select id, request_ciphertext from approvals where request_ciphertext is not null")
+          .all()
+          .map(async (row) => ({
+            id: readString(row, "id"),
+            value: await nextSecretCodec.encode(await this.secretCodec.decode(readString(row, "request_ciphertext"))),
+          })),
+      );
       const marketplaceConfig = await this.marketplaceStore.getConfig();
       const rotatedMarketplaceConfig = marketplaceConfig
         ? {
@@ -210,6 +222,10 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
           .prepare("update connection_requests set value = ? where id = ? and value is not null")
           .run(request.value, request.id);
       writeRotatedIdempotencySecrets(this.database, idempotencyResponses);
+      for (const approval of approvalRequests)
+        this.database
+          .prepare("update approvals set request_ciphertext = ? where id = ?")
+          .run(approval.value, approval.id);
       if (rotatedMarketplaceConfig) {
         this.database
           .prepare("update marketplace_config set value = ? where id = 1")
@@ -237,6 +253,8 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
       delete from runtime_policy;
       delete from runs;
       delete from idempotency_records;
+      delete from approval_grants;
+      delete from approvals;
       delete from marketplace_config;
       delete from provider_preferences;
     `),

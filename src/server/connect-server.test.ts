@@ -42,6 +42,7 @@ import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
 import { actionInputMaxDepth, hashActionRequest, hashIdempotencyKey } from "./actions/action-idempotency.ts";
 import { ActionRunner } from "./actions/action-runner.ts";
 import { registerStaticRoutes } from "./api/static-routes.ts";
+import { ApprovalService } from "./approvals/approval-service.ts";
 import { ConnectServer } from "./connect-server.ts";
 import { TransitFileService } from "./files/transit-files.ts";
 import { AesGcmSecretCodec, PlainTextSecretCodec } from "./secrets/secret-codec.ts";
@@ -3874,6 +3875,375 @@ describe("ConnectServer", () => {
   });
 });
 
+describe("ConnectServer approval checkpoint", () => {
+  function createApprovalTestApp(
+    options: {
+      executor?: ActionExecutor;
+      runtimeTokens?: RuntimeTokenService;
+      approvalTtlSeconds?: number;
+    } = {},
+  ) {
+    const database = new SqliteRuntimeDatabase(":memory:");
+    requestDatabases.push(database);
+    const approvals = new ApprovalService({
+      store: database.approvalStore,
+      ttlSeconds: options.approvalTtlSeconds,
+    });
+    const executions: unknown[] = [];
+    const executor: ActionExecutor =
+      options.executor ??
+      (async (input, context) => {
+        executions.push(input);
+        await context.getCredential("example");
+        return { ok: true, output: { echoed: input } };
+      });
+    const app = createTestServer([{ ...apiKeyProvider, actions: [echoAction] }], {
+      providerLoader: new ActionProviderLoader(executor),
+      approvals,
+      runtimeTokens: options.runtimeTokens,
+      actionPolicy: new LocalActionPolicyService({ requireApprovalOperations: ["write"] }),
+    }).createApp();
+    return { app, approvals, executions, executor };
+  }
+
+  const runRequest = {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ input: { message: "hello" } }),
+  } as const;
+
+  it("pauses gated actions at 202, executes on the creator's first post-approval poll, then replays", async () => {
+    const { app, executions } = createApprovalTestApp();
+    await app.request("/api/connections/example", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+
+    const created = await app.request("/v1/actions/example.echo", runRequest);
+    expect(created.status).toBe(202);
+    const pending = (await created.json()) as Record<string, unknown>;
+    expect(pending).toMatchObject({ success: false, errorCode: "approval_required" });
+    const data = pending.data as Record<string, unknown>;
+    expect(data.approvalId).toEqual(expect.any(String));
+    expect(data.pollUrl).toBe(`/v1/approvals/${data.approvalId}`);
+    expect(data.approvalUrl).toBe(`http://localhost:3000/approvals/${data.approvalId}`);
+    expect(data.operationType).toBe("write");
+    expect(executions).toHaveLength(0);
+
+    const duplicate = await app.request("/v1/actions/example.echo", runRequest);
+    expect(duplicate.status).toBe(202);
+    expect(((await duplicate.json()) as { data: { approvalId: string } }).data.approvalId).toBe(data.approvalId);
+    expect(executions).toHaveLength(0);
+
+    const pollPending = await app.request(`/v1/approvals/${data.approvalId}`);
+    expect(pollPending.status).toBe(202);
+    expect(pollPending.headers.get("retry-after")).toBe("2");
+    await expect(pollPending.json()).resolves.toMatchObject({
+      errorCode: "approval_required",
+      data: { status: "pending" },
+    });
+
+    const listed = await app.request("/api/approvals?status=pending");
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toMatchObject({
+      items: [{ id: data.approvalId, actionId: "example.echo", status: "pending" }],
+    });
+
+    const approved = await app.request(`/api/approvals/${data.approvalId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(approved.status).toBe(200);
+    await expect(approved.json()).resolves.toMatchObject({ approval: { status: "approved" } });
+    expect(executions).toHaveLength(0);
+
+    const executed = await app.request(`/v1/approvals/${data.approvalId}`);
+    expect(executed.status).toBe(200);
+    const executedBody = (await executed.json()) as { data: unknown; meta: Record<string, unknown> };
+    expect(executedBody.data).toEqual({ echoed: { message: "hello" } });
+    expect(executedBody.meta.approvalId).toBe(data.approvalId);
+    expect(executedBody.meta.executionId).toEqual(expect.any(String));
+    expect(executions).toHaveLength(1);
+
+    const replay = await app.request(`/v1/approvals/${data.approvalId}`);
+    expect(replay.status).toBe(200);
+    const replayBody = (await replay.json()) as { meta: Record<string, unknown> };
+    expect(replayBody.meta.executionId).toBe(executedBody.meta.executionId);
+    expect(executions).toHaveLength(1);
+
+    const run = await app.request(`/api/runs/${executedBody.meta.executionId}`);
+    expect(run.status).toBe(200);
+    await expect(run.json()).resolves.toMatchObject({ approvalId: data.approvalId });
+  });
+
+  it("answers 403 approval_denied after an admin deny", async () => {
+    const { app, executions } = createApprovalTestApp();
+    const created = await app.request("/v1/actions/example.echo", runRequest);
+    const { approvalId } = ((await created.json()) as { data: { approvalId: string } }).data;
+
+    const denied = await app.request(`/api/approvals/${approvalId}/deny`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "not today" }),
+    });
+    expect(denied.status).toBe(200);
+    await expect(denied.json()).resolves.toMatchObject({
+      approval: { status: "denied", decisionReason: "not today" },
+    });
+
+    const poll = await app.request(`/v1/approvals/${approvalId}`);
+    expect(poll.status).toBe(403);
+    await expect(poll.json()).resolves.toMatchObject({ errorCode: "approval_denied" });
+    expect(executions).toHaveLength(0);
+  });
+
+  it("answers 410 approval_expired after the TTL lapses", async () => {
+    const { app, approvals } = createApprovalTestApp({ approvalTtlSeconds: 60 });
+    const created = await app.request("/v1/actions/example.echo", runRequest);
+    const { approvalId } = ((await created.json()) as { data: { approvalId: string } }).data;
+
+    await approvals.runMaintenance(new Date(Date.now() + 120_000));
+
+    const poll = await app.request(`/v1/approvals/${approvalId}`);
+    expect(poll.status).toBe(410);
+    await expect(poll.json()).resolves.toMatchObject({ errorCode: "approval_expired" });
+  });
+
+  it("keeps approvals scoped to the creating caller", async () => {
+    const { app } = createApprovalTestApp({ runtimeTokens: new RuntimeTokenService(new MemoryRuntimeTokenStore()) });
+    const created = await app.request("/api/runtime-tokens", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "creator", allowedActions: [], blockedActions: [], allowedProxies: [] }),
+    });
+    const token = (await created.json()) as { token: string };
+    const otherCreated = await app.request("/api/runtime-tokens", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "outsider", allowedActions: [], blockedActions: [], allowedProxies: [] }),
+    });
+    const otherToken = (await otherCreated.json()) as { token: string };
+    const request = {
+      method: "POST",
+      headers: { authorization: `Bearer ${token.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ input: {} }),
+    };
+    const gated = await app.request("/v1/actions/example.echo", request);
+    const { approvalId } = ((await gated.json()) as { data: { approvalId: string } }).data;
+
+    // A different runtime token is not the owner: it gets approval_not_found.
+    const outsider = await app.request(`/v1/approvals/${approvalId}`, {
+      headers: { authorization: `Bearer ${otherToken.token}` },
+    });
+    expect(outsider.status).toBe(404);
+    await expect(outsider.json()).resolves.toMatchObject({ errorCode: "approval_not_found" });
+
+    const ownerPoll = await app.request(`/v1/approvals/${approvalId}`, {
+      headers: { authorization: `Bearer ${token.token}` },
+    });
+    expect(ownerPoll.status).toBe(202);
+  });
+
+  it("lets exactly one concurrent decide win; the loser gets 409 approval_decided", async () => {
+    const { app } = createApprovalTestApp();
+    const created = await app.request("/v1/actions/example.echo", runRequest);
+    const { approvalId } = ((await created.json()) as { data: { approvalId: string } }).data;
+
+    const decide = (path: string, body: unknown) =>
+      app.request(`/api/approvals/${approvalId}/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const [a, b] = await Promise.all([decide("approve", {}), decide("deny", {})]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    const loser = a.status === 409 ? a : b;
+    await expect(loser.json()).resolves.toMatchObject({ error: "approval_decided" });
+
+    const record = await app.request(`/api/approvals/${approvalId}`);
+    expect(["approved", "denied"]).toContain(((await record.json()) as { status: string }).status);
+  });
+
+  it("lets a minted grant skip approval once for an identical request", async () => {
+    const runtimeTokens = new RuntimeTokenService(new MemoryRuntimeTokenStore());
+    const { app, executions } = createApprovalTestApp({ runtimeTokens });
+    await app.request("/api/connections/example", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+    const created = await app.request("/api/runtime-tokens", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "granted", allowedActions: [], blockedActions: [], allowedProxies: [] }),
+    });
+    const { token } = (await created.json()) as { token: string };
+    const request = {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ input: { message: "grant-me" } }),
+    };
+
+    const gated = await app.request("/v1/actions/example.echo", request);
+    expect(gated.status).toBe(202);
+    const { approvalId } = ((await gated.json()) as { data: { approvalId: string } }).data;
+    const approved = await app.request(`/api/approvals/${approvalId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ grant: { ttlMinutes: 30, maxUses: 1 } }),
+    });
+    expect(approved.status).toBe(200);
+    await expect(approved.json()).resolves.toMatchObject({ grant: { maxUses: 1, uses: 0 } });
+
+    const listed = await app.request("/api/approval-grants");
+    expect(listed.status).toBe(200);
+    await expect(listed.json()).resolves.toMatchObject({ items: [{ approvalId }] });
+
+    // The identical request consumes the grant instead of pausing.
+    const covered = await app.request("/v1/actions/example.echo", request);
+    expect(covered.status).toBe(200);
+    expect(executions).toHaveLength(1);
+
+    // The grant is spent: the next identical request pauses again.
+    const again = await app.request("/v1/actions/example.echo", request);
+    expect(again.status).toBe(202);
+    expect(executions).toHaveLength(1);
+  });
+
+  it("pauses gated proxy requests and executes them on the creator's poll", async () => {
+    const database = new SqliteRuntimeDatabase(":memory:");
+    requestDatabases.push(database);
+    const approvals = new ApprovalService({ store: database.approvalStore });
+    const proxied: Array<Record<string, unknown>> = [];
+    const app = createTestServer([apiKeyProvider], {
+      providerLoader: new ProxyProviderLoader(async (input, context) => {
+        proxied.push({ endpoint: input.endpoint, method: input.method });
+        await context.getCredential("example");
+        return {
+          ok: true,
+          response: { status: 200, headers: { "content-type": "application/json" }, data: { proxied: true } },
+        };
+      }),
+      approvals,
+      actionPolicy: new LocalActionPolicyService({ requireApprovalOperations: ["write"] }),
+    }).createApp();
+    await app.request("/api/connections/example", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+    const proxyBody = { endpoint: "/repos", method: "POST", body: { name: "x" } };
+    const created = await app.request("/v1/proxy/example", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(proxyBody),
+    });
+    expect(created.status).toBe(202);
+    const { approvalId } = ((await created.json()) as { data: { approvalId: string } }).data;
+    expect(proxied).toHaveLength(0);
+
+    await app.request(`/api/approvals/${approvalId}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const executed = await app.request(`/v1/approvals/${approvalId}`);
+    expect(executed.status).toBe(200);
+    await expect(executed.json()).resolves.toMatchObject({
+      data: { data: { proxied: true } },
+      meta: { approvalId },
+    });
+    expect(proxied).toHaveLength(1);
+  });
+
+  it("keeps credential-shaped input out of the approval preview", async () => {
+    const { app } = createApprovalTestApp();
+    const created = await app.request("/v1/actions/example.echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { apiKey: "github_pat_supersecret", note: "hi" } }),
+    });
+    const body = (await created.json()) as { data: { preview: unknown } };
+    expect(JSON.stringify(body.data.preview)).not.toContain("github_pat_supersecret");
+    expect(JSON.stringify(body.data.preview)).toContain("[redacted]");
+  });
+
+  it("pauses MCP execute_action into get_approval and executes on its poll", async () => {
+    const { app, executions } = createApprovalTestApp();
+    await app.request("/api/connections/example", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+    const fetcher: typeof fetch = async (input, init) => app.fetch(new Request(input, init));
+    const transport = new StreamableHTTPClientTransport(new URL("https://connect.test/mcp"), { fetch: fetcher });
+    const client = new Client({ name: "connect-server-test", version: "0.0.0" });
+
+    try {
+      await client.connect(transport);
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name)).toContain("get_approval");
+
+      const paused = await client.callTool({
+        name: "execute_action",
+        arguments: { actionId: "example.echo", input: { message: "mcp" } },
+      });
+      const pause = paused.structuredContent as {
+        ok: boolean;
+        data: { status: string; approvalId: string; pollWith: string; approvalUrl: string };
+      };
+      expect(pause.ok).toBe(true);
+      expect(pause.data).toMatchObject({ status: "approval_required", pollWith: "get_approval" });
+      expect(pause.data.approvalUrl).toContain(`/approvals/${pause.data.approvalId}`);
+      expect(executions).toHaveLength(0);
+
+      const pendingPoll = await client.callTool({
+        name: "get_approval",
+        arguments: { approvalId: pause.data.approvalId },
+      });
+      expect((pendingPoll.structuredContent as { ok: boolean; data: { status: string } }).data.status).toBe("pending");
+
+      await app.request(`/api/approvals/${pause.data.approvalId}/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const executed = await client.callTool({
+        name: "get_approval",
+        arguments: { approvalId: pause.data.approvalId },
+      });
+      const executedPayload = executed.structuredContent as {
+        ok: boolean;
+        data: { status: string; result: unknown };
+      };
+      expect(executedPayload.ok).toBe(true);
+      expect(executedPayload.data.status).toBe("executed");
+      expect(executedPayload.data.result).toEqual({ echoed: { message: "mcp" } });
+      expect(executions).toHaveLength(1);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("omits get_approval from the tool list when the approvals store is absent", async () => {
+    const app = createTestServer([apiKeyProvider]).createApp();
+    const fetcher: typeof fetch = async (input, init) => app.fetch(new Request(input, init));
+    const transport = new StreamableHTTPClientTransport(new URL("https://connect.test/mcp"), { fetch: fetcher });
+    const client = new Client({ name: "connect-server-test", version: "0.0.0" });
+    try {
+      await client.connect(transport);
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name)).not.toContain("get_approval");
+      expect((await app.request("/api/approvals")).status).toBe(404);
+      expect((await app.request("/v1/approvals/missing")).status).toBe(404);
+    } finally {
+      await client.close();
+    }
+  });
+});
+
 interface TestAuthOptions {
   adminToken?: string;
   runtimeToken?: string;
@@ -3882,6 +4252,7 @@ interface TestAuthOptions {
 
 interface CreateTestServerOptions {
   marketplace?: MarketplaceService;
+  approvals?: ApprovalService;
   auth?: TestAuthOptions;
   publicOrigin?: string;
   actionPolicy?: ActionPolicyService;
@@ -3974,6 +4345,7 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
     },
     actionPolicy: options.actionPolicy,
     actionSearch: options.actionSearch,
+    approvals: options.approvals,
     logger: options.logger,
   });
 }

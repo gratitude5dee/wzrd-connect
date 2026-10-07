@@ -442,6 +442,55 @@ export function createOpenApiDocument(
     },
     "/api/runs": createRunsPath(),
     "/api/runs/{id}": createRunDetailPath(),
+    "/v1/approvals/{id}": createApprovalPollPath(),
+    "/api/approvals": createApprovalsPath(),
+    "/api/approvals/{id}": {
+      get: {
+        tags: ["Approvals"],
+        summary: "Get one approval record.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: jsonSchema.string({ description: "Approval identifier." }),
+          },
+        ],
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/Approval" }),
+          404: jsonResponse(errorResponseSchema),
+        },
+      },
+    },
+    "/api/approvals/{id}/approve": createApprovalDecidePath("approve"),
+    "/api/approvals/{id}/deny": createApprovalDecidePath("deny"),
+    "/api/approval-grants": {
+      get: {
+        tags: ["Approvals"],
+        summary: "List active approval grants.",
+        responses: {
+          200: jsonResponse({ $ref: "#/components/schemas/ApprovalGrantList" }),
+        },
+      },
+    },
+    "/api/approval-grants/{id}": {
+      delete: {
+        tags: ["Approvals"],
+        summary: "Revoke an approval grant.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: jsonSchema.string({ description: "Approval grant identifier." }),
+          },
+        ],
+        responses: {
+          200: jsonResponse(jsonSchema.object({ ok: jsonSchema.boolean() }, { required: ["ok"] })),
+          404: jsonResponse(errorResponseSchema),
+        },
+      },
+    },
     "/mcp": createMcpPath(),
     "/mcp/tools": getOperation("MCP", "List discovery-oriented MCP tool summaries.", {
       type: "object",
@@ -470,6 +519,11 @@ export function createOpenApiDocument(
         name: "Triggers",
         description: "Registered provider Trigger operations and owned remote subscription cleanup.",
       },
+      {
+        name: "Approvals",
+        description:
+          "Human-in-the-loop checkpoint for gated action and proxy requests. Execution happens on the creator's poll of GET /v1/approvals/{id}, never on the admin decide call.",
+      },
       { name: "Proxy", description: "Provider API proxy requests using the selected local or SaaS connection." },
       { name: "MCP", description: "Stateless MCP POST endpoint and tool metadata." },
     ],
@@ -489,6 +543,92 @@ export function createOpenApiDocument(
           {
             required: ["adminAuthConfigured", "authenticated"],
             description: "Local web console admin authentication state.",
+          },
+        ),
+        Approval: jsonSchema.object(
+          {
+            id: jsonSchema.string({ description: "Approval identifier." }),
+            kind: { type: "string", enum: ["action", "proxy"] },
+            actionId: jsonSchema.string({
+              description: "Action id, or the proxied <service> path for proxy requests.",
+            }),
+            service: jsonSchema.string(),
+            connectionId: jsonSchema.string(),
+            connectionName: jsonSchema.string(),
+            connectionRequestId: jsonSchema.string(),
+            operationType: jsonSchema.string({ description: "Classified operation type (read/write/destructive)." }),
+            caller: jsonSchema.string({ description: "Entry point: http or mcp." }),
+            runtimeTokenId: jsonSchema.string({
+              description: "Persistent runtime token identity; absent for bootstrap/JWT/unauthenticated callers.",
+            }),
+            preview: jsonSchema.unknown("Redacted request summary; never contains credential material."),
+            status: {
+              type: "string",
+              enum: ["pending", "approved", "denied", "expired", "executing", "executed", "failed"],
+            },
+            decidedBy: jsonSchema.string(),
+            decidedAt: jsonSchema.string(),
+            decisionFactor: jsonSchema.string(),
+            decisionReason: jsonSchema.string(),
+            grantId: jsonSchema.string(),
+            executionId: jsonSchema.string(),
+            createdAt: jsonSchema.string(),
+            updatedAt: jsonSchema.string(),
+            expiresAt: jsonSchema.string(),
+          },
+          {
+            required: ["id", "kind", "actionId", "status", "createdAt", "expiresAt"],
+            description: "Admin-facing approval record. Owner keys and request ciphertext are never serialized.",
+          },
+        ),
+        ApprovalListPage: jsonSchema.object(
+          {
+            items: { type: "array", items: { $ref: "#/components/schemas/Approval" } },
+            nextCursor: jsonSchema.string({ description: "Cursor for the next page; absent at the end." }),
+          },
+          { required: ["items"], description: "Paginated approval list." },
+        ),
+        ApprovalGrant: jsonSchema.object(
+          {
+            id: jsonSchema.string(),
+            approvalId: jsonSchema.string(),
+            runtimeTokenId: jsonSchema.string(),
+            actionId: jsonSchema.string(),
+            connectionId: jsonSchema.string(),
+            operationType: jsonSchema.string(),
+            expiresAt: jsonSchema.string(),
+            maxUses: { type: "integer" },
+            uses: { type: "integer" },
+            createdBy: jsonSchema.string(),
+            createdAt: jsonSchema.string(),
+          },
+          {
+            required: [
+              "id",
+              "approvalId",
+              "runtimeTokenId",
+              "actionId",
+              "operationType",
+              "expiresAt",
+              "maxUses",
+              "uses",
+              "createdAt",
+            ],
+            description: "Durable grant: identical requests from the same runtime token skip approval.",
+          },
+        ),
+        ApprovalGrantList: jsonSchema.object(
+          { items: { type: "array", items: { $ref: "#/components/schemas/ApprovalGrant" } } },
+          { required: ["items"], description: "Active approval grants." },
+        ),
+        ApprovalDecisionResult: jsonSchema.object(
+          {
+            approval: { $ref: "#/components/schemas/Approval" },
+            grant: { $ref: "#/components/schemas/ApprovalGrant" },
+          },
+          {
+            required: ["approval"],
+            description: "Result of an approve/deny call. grant is present only when a durable grant was minted.",
           },
         ),
         ActionSearchResult: jsonSchema.object(
@@ -1303,6 +1443,136 @@ function createRunDetailPath(): Record<string, unknown> {
       responses: {
         200: jsonResponse({ $ref: "#/components/schemas/RunLog" }),
         404: jsonResponse({ type: "object", additionalProperties: true }),
+      },
+    },
+  };
+}
+
+function createApprovalPollPath(): Record<string, unknown> {
+  return {
+    get: {
+      tags: ["Approvals"],
+      summary: "Poll an approval the caller created.",
+      description:
+        "Only the bearer that created the approval can poll it; other tokens get approval_not_found. " +
+        "Pending approvals return 202 approval_required with Retry-After. A caller that polls faster than " +
+        "the Retry-After interval accumulates rate-limit violations and gets 429 rate_limited. " +
+        "Approving does NOT execute the request: the first poll after approval runs the stored request " +
+        "under a fresh policy evaluation and returns its result. Later polls replay the stored response " +
+        "during the idempotency replay window. Denied approvals return 403 approval_denied; expired ones " +
+        "return 410 approval_expired.",
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: jsonSchema.string({ description: "Approval identifier." }),
+        },
+      ],
+      responses: {
+        200: jsonResponse(
+          runtimeSuccessSchema(jsonSchema.unknown("Executed action output or proxied provider response.")),
+          "The stored request executed (or its stored response replayed).",
+        ),
+        202: jsonResponse(
+          runtimeFailureSchema(),
+          "approval_required: still pending, or another poll is executing the request. Retry-After is set.",
+        ),
+        401: jsonResponse(runtimeFailureSchema()),
+        403: jsonResponse(runtimeFailureSchema(), "approval_denied."),
+        404: jsonResponse(runtimeFailureSchema(), "approval_not_found."),
+        410: jsonResponse(runtimeFailureSchema(), "approval_expired."),
+        429: jsonResponse(runtimeFailureSchema(), "rate_limited: polled faster than Retry-After too often."),
+      },
+    },
+  };
+}
+
+function createApprovalsPath(): Record<string, unknown> {
+  return {
+    get: {
+      tags: ["Approvals"],
+      summary: "List approval records for the console inbox.",
+      parameters: [
+        {
+          name: "status",
+          in: "query",
+          required: false,
+          schema: { type: "string", enum: ["pending", "all"] },
+          description: "pending (default) returns open approvals; all includes decided records newest first.",
+        },
+        queryParameter("cursor", "Cursor returned by the previous page."),
+      ],
+      responses: {
+        200: jsonResponse({ $ref: "#/components/schemas/ApprovalListPage" }),
+      },
+    },
+  };
+}
+
+function createApprovalDecidePath(decision: "approve" | "deny"): Record<string, unknown> {
+  const approve = decision === "approve";
+  const grantSchema: Record<string, JsonSchema> = approve
+    ? {
+        grant: jsonSchema.object(
+          {
+            ttlMinutes: {
+              type: "integer",
+              minimum: 1,
+              maximum: 1440,
+              description: "Grant lifetime in minutes. Defaults to 30.",
+            },
+            maxUses: {
+              type: "integer",
+              minimum: 0,
+              description: "Maximum grant consumptions. 0 means unlimited until expiry.",
+            },
+            allowDestructive: {
+              type: "boolean",
+              description: "Required for grants covering destructive operations.",
+            },
+          },
+          {
+            description:
+              "Optional durable grant: identical future requests from the same runtime token skip approval. Only minted when the approval carries a runtime token; refused for destructive operations unless allowDestructive is true.",
+          },
+        ),
+      }
+    : {};
+  return {
+    post: {
+      tags: ["Approvals"],
+      summary: `${approve ? "Approve" : "Deny"} a pending approval.`,
+      description:
+        "Atomic: only the first decision on a pending record lands; later decisions return 409 approval_decided. " +
+        "Approving does not execute the stored request — the creator's next poll executes it.",
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: jsonSchema.string({ description: "Approval identifier." }),
+        },
+      ],
+      requestBody: {
+        required: false,
+        content: {
+          "application/json": {
+            schema: jsonSchema.object(
+              {
+                ...(approve ? grantSchema : {}),
+                reason: jsonSchema.string({ description: "Optional human-readable decision reason." }),
+              },
+              { description: `Approval ${decision} request.` },
+            ),
+          },
+        },
+      },
+      responses: {
+        200: jsonResponse({ $ref: "#/components/schemas/ApprovalDecisionResult" }),
+        400: jsonResponse(errorResponseSchema),
+        404: jsonResponse(errorResponseSchema),
+        409: jsonResponse(errorResponseSchema),
       },
     },
   };

@@ -85,6 +85,8 @@ export interface ConnectorRuntimeOptions {
   providerHttpDispatch?: ProviderHttpDispatchOptions;
   /** Allow or block actions, proxies and Triggers by name. */
   actionPolicy?: ActionPolicyConfig;
+  /** Pending-approval lifetime in seconds (default 3600). */
+  approvalTtlSeconds?: number;
   /** Services, or `*`, whose connections may carry their own OAuth client instead of the configured one. */
   allowedCustomOAuth?: string[];
   transitFiles?: ConnectorTransitFileOptions;
@@ -209,26 +211,30 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
     const tempDir = join(dataDir, "tmp/transit-files");
     await transitFiles.cleanupExpired();
     await cleanupStagedTransitFiles(tempDir, ttlSeconds * 1000);
-    const { app, runtimeAuthConfigured, saasCleanup, triggerMaintenance } = await createConnectApp({
-      catalog,
-      providerLoader: new ProviderLoader(executorModules),
-      providerHttpDispatch: options.providerHttpDispatch,
-      runtimeDatabase: database,
-      transitFiles,
-      uploadTransitFile: createNodeTransitFileUpload({ transitFiles, tempDir }),
-      publicOrigin,
-      configuredOrigin: options.publicOriginConfigured === false ? undefined : publicOrigin,
-      secretCodec,
-      adminToken: options.adminToken,
-      runtimeToken: options.runtimeToken,
-      verifyRuntimeJwt,
-      actionPolicy: new ActionPolicyService(options.actionPolicy),
-      allowedCustomOAuth: options.allowedCustomOAuth,
-      logger: options.logger,
-      serveDocumentation: options.apiReference ?? false,
-    });
+    const { app, runtimeAuthConfigured, saasCleanup, triggerMaintenance, approvalMaintenance } = await createConnectApp(
+      {
+        catalog,
+        providerLoader: new ProviderLoader(executorModules),
+        providerHttpDispatch: options.providerHttpDispatch,
+        runtimeDatabase: database,
+        transitFiles,
+        uploadTransitFile: createNodeTransitFileUpload({ transitFiles, tempDir }),
+        publicOrigin,
+        configuredOrigin: options.publicOriginConfigured === false ? undefined : publicOrigin,
+        secretCodec,
+        adminToken: options.adminToken,
+        runtimeToken: options.runtimeToken,
+        verifyRuntimeJwt,
+        actionPolicy: new ActionPolicyService(options.actionPolicy),
+        approvalTtlSeconds: options.approvalTtlSeconds,
+        allowedCustomOAuth: options.allowedCustomOAuth,
+        logger: options.logger,
+        serveDocumentation: options.apiReference ?? false,
+      },
+    );
     saasCleanup.start();
     triggerMaintenance.start();
+    approvalMaintenance.start();
     const shutdown = new AbortController();
     const pending = new Set<Promise<Response>>();
     let closing: Promise<void> | undefined;
@@ -256,7 +262,12 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
         if (!closing) {
           closing = Promise.resolve().then(async () => {
             shutdown.abort(new Error("Open Connector runtime is closing."));
-            await Promise.allSettled([...pending, saasCleanup.close(), triggerMaintenance.close()]);
+            await Promise.allSettled([
+              ...pending,
+              saasCleanup.close(),
+              triggerMaintenance.close(),
+              approvalMaintenance.close(),
+            ]);
             try {
               await database.close();
             } finally {
