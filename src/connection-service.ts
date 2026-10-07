@@ -358,7 +358,9 @@ export class ConnectionService {
       ? undefined
       : await this.resolveMarketplaceSummary(provider, connectionName, Boolean(stored));
     if (marketplace) return { kind: "marketplace", summary: marketplace };
-    if (!stored && connectionName && !this.supportsAuth(provider, "no_auth")) {
+    if (!stored && (connectionName || service === "pact") && !this.supportsAuth(provider, "no_auth")) {
+      // PACT actions can never run against a local executor, so an unresolved
+      // Brand connection is an error even when no name was given.
       throw new ConnectionError("connection_not_found", `${service} connection not found: ${name}.`);
     }
 

@@ -400,7 +400,7 @@ export type PactBrandConnectResponse =
       success: false;
       errorCode: string;
       message: string;
-      data: { connectionId: string; connectionName: string; consent: PactConsentRequest };
+      data: PactConsentRequest;
     };
 
 export interface ExecutionResult {

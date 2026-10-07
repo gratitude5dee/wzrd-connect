@@ -132,6 +132,23 @@ export class PactService {
       if (!this.options.delegation || !card.delegation) {
         throw new ConnectionError("invalid_scope", "The Brand card advertises no delegation scopes.");
       }
+      // A live grant already covering the request answers connected without a
+      // second consent — re-consent is only for genuinely new scopes.
+      const existing = await this.options.store.get("pact", input.connectionName);
+      const grant = existing?.source === "pact" ? existing.credential.delegation : undefined;
+      if (
+        existing?.source === "pact" &&
+        grant?.accessToken &&
+        !grant.needsReauthorization &&
+        scopes.every((scope) => grant.grantedScopes?.includes(scope))
+      ) {
+        const credential = this.createCredential(input, card, registration.id);
+        credential.delegation = mergeCardDelegation(grant, card.delegation);
+        credential.profile.accountId = existing.credential.profile.accountId;
+        credential.profile.grantedScopes = grant.grantedScopes;
+        const stored = await this.options.store.setPactConnection(input.connectionName, credential);
+        return this.connectResult(stored.id, stored.connectionName, credential);
+      }
       const consent = await this.options.delegation.startDeviceRequest({
         connectionName: input.connectionName,
         endpoints: card.delegation,

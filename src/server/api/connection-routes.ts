@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import { ConnectionError } from "../../connection-service.ts";
 import { OAuthClientConfigError } from "../../oauth/oauth-client-config-service.ts";
 import { OAuthFlowError } from "../../oauth/oauth-flow-service.ts";
+import { PactDelegationError } from "../../pact/pact-delegation-service.ts";
 import { SaasError } from "../../saas/saas-client.ts";
 import { hasAdminBearer } from "./auth.ts";
 import { readJsonBody, HttpRequestError } from "./http-utils.ts";
@@ -43,7 +44,8 @@ export function createConnectionRoutes({ connections, oauthFlow, saasOAuth, pact
     if (
       error instanceof ConnectionError ||
       error instanceof OAuthFlowError ||
-      error instanceof OAuthClientConfigError
+      error instanceof OAuthClientConfigError ||
+      error instanceof PactDelegationError
     ) {
       return writeRuntimeFailure(context, connectionManagementFailure(error));
     }

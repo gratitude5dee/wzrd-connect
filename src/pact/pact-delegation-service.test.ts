@@ -462,6 +462,29 @@ describe("PACT step-up", () => {
     expect(details.missingScopes).toEqual(["orders:cancel"]);
     expect(details.connectionRequestId).toEqual(expect.any(String));
   });
+
+  it("connectBrand answers connected without a new consent when scopes are already granted", async () => {
+    const context = await createContext();
+    await register(context.database);
+    const consent = await startConsent(context, ["orders:read"]);
+    context.provider.oauth.pollScript.push({ kind: "approve", grantedScopes: ["orders:read", "orders:cancel"] });
+    await poll(context, consent.connectionRequestId);
+    const deviceCalls = () =>
+      context.provider.requests.filter(
+        (request) => (request.body as { form?: { scope?: string } }).form?.scope !== undefined,
+      ).length;
+    expect(deviceCalls()).toBe(1);
+
+    const reconnect = await context.service.connectBrand({
+      connectionName: "acme",
+      agentCardUrl: context.provider.cardUrl,
+      scopes: ["orders:read"],
+    });
+    expect(reconnect.status).toBe("connected");
+    expect(deviceCalls()).toBe(1);
+    const stored = await storedBrand(context);
+    expect(stored.credential.delegation?.grantedScopes).toEqual(["orders:read", "orders:cancel"]);
+  });
 });
 
 describe("PACT revocation", () => {

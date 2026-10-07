@@ -668,7 +668,7 @@ function ConnectBrandDialog(props: ConnectBrandDialogProps): ReactNode {
       });
       if (!result.success) {
         if (result.errorCode === "pact_consent_required") {
-          setConsent(result.data.consent);
+          setConsent(result.data);
         } else {
           setError(result.message ?? t("pact.brands.connectFailed"));
         }

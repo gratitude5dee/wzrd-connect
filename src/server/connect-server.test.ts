@@ -5361,6 +5361,19 @@ describe("ConnectServer PACT Brand connections", () => {
     expect(provider.requests.at(-1)?.headers[mockPactDelegationHeader]).toMatch(/^Bearer /);
   });
 
+  it("answers connection_not_found, not executor_unavailable, for pact actions without a connection", async () => {
+    const { app } = createBrandApp();
+    const run = await app.request("/v1/actions/pact.send_message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { text: "hello" } }),
+    });
+    await expect(run.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: "connection_not_found",
+    });
+  });
+
   it("maps access_denied to 403 and expired_token to 410", async () => {
     const { app, provider, verifyJwks } = createBrandApp();
     expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
