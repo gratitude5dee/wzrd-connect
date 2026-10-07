@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { setGlobalProxyFromEnv } from "node:http";
 import { join } from "node:path";
 import { defaultLazySchemaCacheFiles } from "../catalog-lazy-schemas.ts";
-import { parseActionPolicyList } from "../core/action-policy.ts";
+import { parseActionPolicyList, parseApprovalOperationList } from "../core/action-policy.ts";
 import { parseEgressTrustedHosts, parsePrivateNetworkAccessFlag } from "../core/request.ts";
 import { isConsoleShellRequest } from "./api/console-paths.ts";
 import { registerStaticRoutes } from "./api/static-routes.ts";
@@ -87,6 +87,9 @@ async function main(): Promise<void> {
       blockedProxies: parseActionPolicyList(process.env.OOMOL_CONNECT_BLOCKED_PROXIES),
       allowedTriggers: parseActionPolicyList(process.env.OOMOL_CONNECT_ALLOWED_TRIGGERS),
       blockedTriggers: parseActionPolicyList(process.env.OOMOL_CONNECT_BLOCKED_TRIGGERS),
+      requireApprovalOperations: parseApprovalOperationList(process.env.OOMOL_CONNECT_REQUIRE_APPROVAL_OPERATIONS),
+      approvalRequiredActions: parseActionPolicyList(process.env.OOMOL_CONNECT_APPROVAL_REQUIRED_ACTIONS),
+      approvalExemptActions: parseActionPolicyList(process.env.OOMOL_CONNECT_APPROVAL_EXEMPT_ACTIONS),
     },
     allowedCustomOAuth: parseActionPolicyList(process.env.OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH),
     postgres: databaseUrl

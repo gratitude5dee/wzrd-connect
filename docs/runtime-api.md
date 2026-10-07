@@ -36,6 +36,21 @@ granted credential connections; virtual `no_auth` connections do not require gra
 `GET /api/actions/:actionId/agent.md` stay unfiltered. Bootstrap runtime tokens and JWTs have no
 stored connection grant, so they remain unrestricted.
 
+Every policy layer can additionally require approval before execution. `requireApprovalOperations`
+lists the operation types (`read`, `write`, `destructive`) that pause for approval;
+`approvalRequiredActions` and `approvalExemptActions` are action rules in the same
+`*`/`service.*`/exact-id syntax as the other policy lists. The deployment layer reads the
+`OOMOL_CONNECT_REQUIRE_APPROVAL_OPERATIONS`, `OOMOL_CONNECT_APPROVAL_REQUIRED_ACTIONS`, and
+`OOMOL_CONNECT_APPROVAL_EXEMPT_ACTIONS` environment variables; `PUT /api/runtime-policy` accepts all
+three fields. Tokens carry only `requireApprovalOperations` and `approvalRequiredActions` — a token
+can widen an approval requirement, never exempt an action.
+
+Approval evaluation is ordered: an `approvalRequiredActions` match on any layer forces approval;
+otherwise a covering approval grant authorizes execution; otherwise a deployment or runtime
+`approvalExemptActions` match executes directly; otherwise an action whose operation type appears in
+any layer's `requireApprovalOperations` requires approval; otherwise the action executes. Proxy
+calls classify GET/HEAD as `read`, DELETE as `destructive`, and everything else as `write`.
+
 Example: two GitHub connections (`default` and `work`) and two tokens:
 
 ```bash
@@ -475,6 +490,8 @@ These endpoints power the Web Console, examples, and setup scripts:
 - `POST /api/runtime-tokens`
 - `PUT /api/runtime-tokens/:id`
 - `DELETE /api/runtime-tokens/:id`
+- `GET /api/runtime-policy`
+- `PUT /api/runtime-policy`
 - `GET /api/runs`
 - `GET /api/runs/:id`
 - `POST /mcp`

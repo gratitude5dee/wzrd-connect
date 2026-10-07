@@ -137,6 +137,8 @@ describe("AccessPage", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      requireApprovalOperations: [],
+      approvalRequiredActions: [],
     });
   });
 
@@ -156,6 +158,31 @@ describe("AccessPage", () => {
       blockedActions: [],
       allowedProxies: ["github"],
       allowedConnections: [githubWorkId],
+      requireApprovalOperations: [],
+      approvalRequiredActions: [],
+    });
+  });
+
+  it("serializes token approval requirements into the policy body", () => {
+    expect(
+      runtimeTokenPolicyBody(
+        {
+          allowedActions: [],
+          blockedActions: [],
+          allowedProxies: [],
+          requireApprovalOperations: ["write", "destructive"],
+          approvalRequiredActions: ["github.create_issue"],
+        },
+        { mode: "unrestricted", ids: [] },
+      ),
+    ).toEqual({
+      allowedTriggers: [],
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      allowedConnections: [],
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
     });
   });
 

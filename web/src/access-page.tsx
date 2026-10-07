@@ -1,4 +1,5 @@
 import type {
+  ApprovalOperationType,
   ConnectionRecord,
   PolicyRules,
   ProviderDefinition,
@@ -260,6 +261,8 @@ export function AccessPage(props: AccessPageProps): ReactNode {
         blockedProxies: [],
         allowedTriggers: token.allowedTriggers ?? [],
         blockedTriggers: [],
+        requireApprovalOperations: token.requireApprovalOperations ?? [],
+        approvalRequiredActions: token.approvalRequiredActions ?? [],
       }),
     );
     setEditConnections(createConnectionGrantDraft(token.allowedConnections ?? []));
@@ -713,7 +716,13 @@ function RuntimePolicyEditor(props: RuntimePolicyDialogProps): ReactNode {
   return (
     <section className="runtime-policy-editor">
       <div className="runtime-policy-editor-grid">
-        <PolicyEditor draft={props.draft} providers={props.providers} includeProxies onChange={props.onDraftChange} />
+        <PolicyEditor
+          draft={props.draft}
+          providers={props.providers}
+          includeProxies
+          approvalScope="layer"
+          onChange={props.onDraftChange}
+        />
         <aside className="policy-impact-panel" id="runtime-policy-impact">
           <h3>{t("access.policy.impact.title")}</h3>
           <p>{t("access.policy.impact.description")}</p>
@@ -752,23 +761,29 @@ function PolicyRuleReadout(props: { rules: PolicyRules }): ReactNode {
     ["blockedActions", t("access.policy.blockedActions")],
     ["allowedProxies", t("access.policy.allowedProxies")],
     ["blockedProxies", t("access.policy.blockedProxies")],
+    ["requireApprovalOperations", t("access.policy.requireApprovalOperations")],
+    ["approvalRequiredActions", t("access.policy.approvalRequiredActions")],
+    ["approvalExemptActions", t("access.policy.approvalExemptActions")],
   ] as const;
   return (
     <div className="policy-rule-readout">
-      {fields.map(([field, label]) => (
-        <div key={field}>
-          <strong>{label}</strong>
-          {props.rules[field].length > 0 ? (
-            <div>
-              {props.rules[field].map((rule) => (
-                <code key={rule}>{rule}</code>
-              ))}
-            </div>
-          ) : (
-            <span>{t("access.policy.deploymentSummary.none")}</span>
-          )}
-        </div>
-      ))}
+      {fields.map(([field, label]) => {
+        const rules = props.rules[field] ?? [];
+        return (
+          <div key={field}>
+            <strong>{label}</strong>
+            {rules.length > 0 ? (
+              <div>
+                {rules.map((rule) => (
+                  <code key={rule}>{rule}</code>
+                ))}
+              </div>
+            ) : (
+              <span>{t("access.policy.deploymentSummary.none")}</span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -837,6 +852,7 @@ function CreateTokenDialog(props: CreateTokenDialogProps): ReactNode {
                 providers={props.providers}
                 includeProxies
                 proxyAccess="grant"
+                approvalScope="token"
                 connectionEditor={
                   <ConnectionGrantEditor
                     draft={props.connections}
@@ -906,6 +922,7 @@ function EditTokenPolicyDialog(props: EditTokenPolicyDialogProps): ReactNode {
               providers={props.providers}
               includeProxies
               proxyAccess="grant"
+              approvalScope="token"
               connectionEditor={
                 <ConnectionGrantEditor
                   draft={props.connections}
@@ -1003,7 +1020,7 @@ function resourcePolicySummary(
 }
 
 function configuredRuleCount(rules: PolicyRules): number {
-  return Object.values(rules).reduce((count, values) => count + values.length, 0);
+  return Object.values(rules).reduce((count, values) => count + (values?.length ?? 0), 0);
 }
 
 function policyRisk(policy: RuntimePolicyState, providers: ProviderDefinition[]): "actions" | "proxies" | "all" | null {
@@ -1034,7 +1051,15 @@ export function allowedConnectionsFromDraft(draft: ConnectionGrantDraft): string
 }
 
 export function runtimeTokenPolicyBody(
-  rules: Pick<PolicyRules, "allowedActions" | "blockedActions" | "allowedProxies" | "allowedTriggers">,
+  rules: Pick<
+    PolicyRules,
+    | "allowedActions"
+    | "blockedActions"
+    | "allowedProxies"
+    | "allowedTriggers"
+    | "requireApprovalOperations"
+    | "approvalRequiredActions"
+  >,
   connections: ConnectionGrantDraft,
 ): {
   allowedActions: string[];
@@ -1042,6 +1067,8 @@ export function runtimeTokenPolicyBody(
   allowedProxies: string[];
   allowedConnections: string[];
   allowedTriggers: string[];
+  requireApprovalOperations: ApprovalOperationType[];
+  approvalRequiredActions: string[];
 } {
   return {
     allowedActions: rules.allowedActions,
@@ -1049,6 +1076,8 @@ export function runtimeTokenPolicyBody(
     allowedProxies: rules.allowedProxies,
     allowedConnections: allowedConnectionsFromDraft(connections),
     allowedTriggers: rules.allowedTriggers ?? [],
+    requireApprovalOperations: rules.requireApprovalOperations ?? [],
+    approvalRequiredActions: rules.approvalRequiredActions ?? [],
   };
 }
 

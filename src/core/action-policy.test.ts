@@ -1,7 +1,13 @@
+import type { ApprovalGrant, ApprovalGrantLookup, ApprovalGrantQuery, TokenPolicy } from "./action-policy.ts";
 import type { ActionDefinition } from "./types.ts";
 
 import { describe, expect, it } from "vitest";
-import { ActionPolicyService, parseActionPolicyList } from "./action-policy.ts";
+import {
+  ActionPolicyService,
+  parseActionPolicyList,
+  parseApprovalOperationList,
+  proxyOperationType,
+} from "./action-policy.ts";
 
 const action: ActionDefinition = {
   id: "github.create_issue",
@@ -378,6 +384,195 @@ describe("ActionPolicyService", () => {
       code: "connection_not_allowed",
     });
     expect(snapshot.evaluateConnection(workConnectionId)).toMatchObject({ allowed: true });
+  });
+
+  it("keeps approval fields unset in snapshots that configure none", () => {
+    const snapshot = new ActionPolicyService().createSnapshot({
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      blockedProxies: [],
+    });
+    expect(snapshot.state.deployment.requireApprovalOperations).toEqual([]);
+    expect(snapshot.state.runtime.approvalRequiredActions).toEqual([]);
+    expect(snapshot.state.runtime.approvalExemptActions).toEqual([]);
+  });
+});
+
+const readAction: ActionDefinition = { ...action, id: "github.get_repo", operationType: "read" };
+const destructiveAction: ActionDefinition = {
+  ...action,
+  id: "github.delete_repository",
+  operationType: "destructive",
+};
+
+const approvalGrant: ApprovalGrant = {
+  id: "grant-1",
+  runtimeTokenId: "token-1",
+  actionId: action.id,
+  operationType: "write",
+  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  maxUses: 1,
+  uses: 0,
+};
+
+describe("Approval evaluation", () => {
+  it("executes by default when no approval rules are configured", async () => {
+    const snapshot = new ActionPolicyService().createSnapshot();
+    await expect(snapshot.evaluateApproval(action)).resolves.toEqual({ outcome: "execute", source: "default" });
+    await expect(snapshot.evaluateApproval(destructiveAction)).resolves.toEqual({
+      outcome: "execute",
+      source: "default",
+    });
+  });
+
+  it("orders required patterns before grants, exemptions, and operation types", async () => {
+    const service = new ActionPolicyService({
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
+      approvalExemptActions: ["github.*"],
+    });
+    const granting: ApprovalGrantLookup = { claimGrant: () => approvalGrant };
+    const snapshot = service.createSnapshot();
+
+    // A required pattern wins over a covering grant, an exemption, and the operation type.
+    await expect(snapshot.evaluateApproval(action, granting)).resolves.toEqual({
+      outcome: "approval_required",
+      source: "deployment",
+      rule: "github.create_issue",
+    });
+    // A live grant wins over a matching exemption.
+    await expect(snapshot.evaluateApproval(readAction, granting)).resolves.toEqual({
+      outcome: "grant",
+      source: "grant",
+      grantId: "grant-1",
+    });
+    // An exemption wins over the operation type requirement.
+    await expect(snapshot.evaluateApproval(destructiveAction)).resolves.toEqual({
+      outcome: "execute",
+      source: "deployment",
+      rule: "github.*",
+    });
+    // With no required, grant, or exempt match, the operation type gates execution.
+    const gated = new ActionPolicyService({ requireApprovalOperations: ["write"] }).createSnapshot();
+    await expect(gated.evaluateApproval(action)).resolves.toEqual({
+      outcome: "approval_required",
+      source: "deployment",
+      rule: "write",
+    });
+    await expect(gated.evaluateApproval(readAction)).resolves.toEqual({ outcome: "execute", source: "default" });
+  });
+
+  it("evaluates required patterns on every layer before moving on", async () => {
+    const snapshot = new ActionPolicyService({ approvalExemptActions: ["*"] }).createSnapshot(
+      {
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        blockedProxies: [],
+        approvalRequiredActions: ["github.*"],
+      },
+      {
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        allowedConnections: [],
+        approvalRequiredActions: ["github.create_issue"],
+      },
+    );
+
+    // The deployment exempt never wins: runtime and token required rules hit first.
+    await expect(snapshot.evaluateApproval(action)).resolves.toEqual({
+      outcome: "approval_required",
+      source: "runtime",
+      rule: "github.*",
+    });
+    // Deployment required beats runtime required on a shared match.
+    const shared = new ActionPolicyService({ approvalRequiredActions: ["github.*"] }).createSnapshot({
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      blockedProxies: [],
+      approvalRequiredActions: ["github.create_issue"],
+    });
+    await expect(shared.evaluateApproval(action)).resolves.toEqual({
+      outcome: "approval_required",
+      source: "deployment",
+      rule: "github.*",
+    });
+  });
+
+  it("claims a covering grant with the action, operation type, and connection", async () => {
+    const queries: ApprovalGrantQuery[] = [];
+    const lookup: ApprovalGrantLookup = {
+      claimGrant: (query) => {
+        queries.push(query);
+        return Promise.resolve(approvalGrant);
+      },
+    };
+    const snapshot = new ActionPolicyService({ requireApprovalOperations: ["write"] }).createSnapshot();
+
+    await expect(snapshot.evaluateApproval({ ...action, connectionId: workConnectionId }, lookup)).resolves.toEqual({
+      outcome: "grant",
+      source: "grant",
+      grantId: "grant-1",
+    });
+    expect(queries).toEqual([
+      { actionId: "github.create_issue", operationType: "write", connectionId: workConnectionId },
+    ]);
+    // A miss falls through to the next rule.
+    const missing: ApprovalGrantLookup = { claimGrant: () => undefined };
+    await expect(snapshot.evaluateApproval(action, missing)).resolves.toEqual({
+      outcome: "approval_required",
+      source: "deployment",
+      rule: "write",
+    });
+  });
+
+  it("lets a token widen approval requirements but never exempt", async () => {
+    const token: TokenPolicy = {
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      allowedConnections: [],
+      requireApprovalOperations: ["read"],
+      approvalRequiredActions: ["github.create_issue"],
+    };
+    const snapshot = new ActionPolicyService().createSnapshot(undefined, token);
+    await expect(snapshot.evaluateApproval(action)).resolves.toEqual({
+      outcome: "approval_required",
+      source: "token",
+      rule: "github.create_issue",
+    });
+    await expect(snapshot.evaluateApproval(readAction)).resolves.toEqual({
+      outcome: "approval_required",
+      source: "token",
+      rule: "read",
+    });
+
+    // Even a smuggled exempt list is ignored: the token layer has no exemptions.
+    const smuggled = { ...token, approvalExemptActions: ["github.*"] } as TokenPolicy;
+    const exemptSnapshot = new ActionPolicyService().createSnapshot(undefined, smuggled);
+    await expect(exemptSnapshot.evaluateApproval(readAction)).resolves.toEqual({
+      outcome: "approval_required",
+      source: "token",
+      rule: "read",
+    });
+  });
+
+  it("parses approval operation lists", () => {
+    expect(parseApprovalOperationList(" write , destructive, bogus,,")).toEqual(["write", "destructive"]);
+    expect(parseApprovalOperationList("read,write,read")).toEqual(["read", "write"]);
+    expect(parseApprovalOperationList(undefined)).toEqual([]);
+  });
+
+  it("classifies proxy methods as read, write, or destructive", () => {
+    expect(proxyOperationType("GET")).toBe("read");
+    expect(proxyOperationType("head")).toBe("read");
+    expect(proxyOperationType("DELETE")).toBe("destructive");
+    expect(proxyOperationType("POST")).toBe("write");
+    expect(proxyOperationType(" patch ")).toBe("write");
+    expect(proxyOperationType("OPTIONS")).toBe("write");
   });
 });
 

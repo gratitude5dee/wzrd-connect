@@ -54,6 +54,9 @@ export function policyRulesFromEditorDraft(draft: PolicyEditorDraft): PolicyRule
     blockedProxies: [...draft.rules.blockedProxies],
     allowedTriggers: [...(draft.rules.allowedTriggers ?? [])],
     blockedTriggers: [...(draft.rules.blockedTriggers ?? [])],
+    requireApprovalOperations: [...(draft.rules.requireApprovalOperations ?? [])],
+    approvalRequiredActions: [...(draft.rules.approvalRequiredActions ?? [])],
+    approvalExemptActions: [...(draft.rules.approvalExemptActions ?? [])],
   };
 }
 
@@ -78,6 +81,8 @@ export function validatePolicyEditorDraft(draft: PolicyEditorDraft, includeProxi
   const fields: Array<[keyof PolicyRules, PolicyResource]> = [
     ["allowedActions", "action"],
     ["blockedActions", "action"],
+    ["approvalRequiredActions", "action"],
+    ["approvalExemptActions", "action"],
     ...(includeProxies
       ? ([
           ["allowedProxies", "proxy"],
@@ -112,6 +117,8 @@ export function policyLayers(policy: RuntimePolicyState, token?: RuntimeTokenSum
         blockedActions: token.blockedActions,
         allowedProxies: token.allowedProxies,
         blockedProxies: [],
+        requireApprovalOperations: token.requireApprovalOperations ?? [],
+        approvalRequiredActions: token.approvalRequiredActions ?? [],
       },
     });
   }
@@ -268,6 +275,9 @@ function clonePolicyRules(rules: PolicyRules): PolicyRules {
     blockedProxies: [...rules.blockedProxies],
     allowedTriggers: [...(rules.allowedTriggers ?? [])],
     blockedTriggers: [...(rules.blockedTriggers ?? [])],
+    requireApprovalOperations: [...(rules.requireApprovalOperations ?? [])],
+    approvalRequiredActions: [...(rules.approvalRequiredActions ?? [])],
+    approvalExemptActions: [...(rules.approvalExemptActions ?? [])],
   };
 }
 

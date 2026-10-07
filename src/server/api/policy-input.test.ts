@@ -130,6 +130,83 @@ describe("policy input", () => {
     ).toThrow("does not support proxy block rules");
   });
 
+  it("reads approval fields on the Runtime policy", () => {
+    expect(
+      readRuntimePolicyRules({
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        blockedProxies: [],
+        requireApprovalOperations: [" write ", "destructive", "write"],
+        approvalRequiredActions: [" github.* ", "github.*"],
+        approvalExemptActions: ["github.get_repo"],
+      }),
+    ).toEqual({
+      allowedTriggers: [],
+      blockedTriggers: [],
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      blockedProxies: [],
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.*"],
+      approvalExemptActions: ["github.get_repo"],
+    });
+  });
+
+  it("rejects approval values outside the operation-type set", () => {
+    expect(() =>
+      readRuntimePolicyRules({
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        blockedProxies: [],
+        requireApprovalOperations: ["bogus"],
+      }),
+    ).toThrow("requireApprovalOperations only accepts read, write, and destructive.");
+    expect(() =>
+      readRuntimePolicyRules({
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        blockedProxies: [],
+        requireApprovalOperations: "write",
+      }),
+    ).toThrow("requireApprovalOperations must be an array of strings");
+    expect(() =>
+      readRuntimePolicyRules({
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        blockedProxies: [],
+        approvalRequiredActions: ["git*"],
+      }),
+    ).toThrow("approvalRequiredActions contains an invalid action rule");
+  });
+
+  it("lets a token widen approval requirements but never exempt", () => {
+    expect(
+      readTokenPolicy(
+        {
+          requireApprovalOperations: ["destructive"],
+          approvalRequiredActions: ["github.delete_repository"],
+        },
+        true,
+      ),
+    ).toEqual({
+      allowedTriggers: [],
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      allowedConnections: [],
+      requireApprovalOperations: ["destructive"],
+      approvalRequiredActions: ["github.delete_repository"],
+    });
+    expect(() => readTokenPolicy({ approvalExemptActions: ["github.*"] }, true)).toThrow(
+      "Token policy does not support approval exemption rules.",
+    );
+  });
+
   it("enforces normalized item and UTF-8 byte limits", () => {
     const rules = Array.from({ length: policyRuleListMaxItems + 1 }, (_, index) => `github.action_${index}`);
     expect(() => readTokenPolicy({ allowedActions: rules, blockedActions: [], allowedProxies: [] })).toThrow(

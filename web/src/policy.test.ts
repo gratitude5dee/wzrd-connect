@@ -1,4 +1,4 @@
-import type { ProviderDefinition, RuntimePolicyState } from "./model";
+import type { PolicyRules, ProviderDefinition, RuntimePolicyState, RuntimeTokenSummary } from "./model";
 
 import { describe, expect, it } from "vitest";
 import {
@@ -78,6 +78,64 @@ describe("web policy evaluation", () => {
     expect(
       evaluatePolicy("github", "proxy", policyLayers(policy, { ...token, allowedProxies: ["github"] })),
     ).toMatchObject({ allowed: true });
+  });
+
+  it("round-trips approval fields through the editor draft", () => {
+    const rules: PolicyRules = {
+      ...emptyRules,
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
+      approvalExemptActions: ["github.get_repo"],
+    };
+    const draft = createPolicyEditorDraft(rules);
+
+    expect(policyRulesFromEditorDraft(draft)).toMatchObject({
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
+      approvalExemptActions: ["github.get_repo"],
+    });
+  });
+
+  it("maps token approval requirements onto the token policy layer", () => {
+    const policy: RuntimePolicyState = { deployment: emptyRules, runtime: emptyRules };
+    const token: RuntimeTokenSummary = {
+      id: "token-1",
+      name: "Issue bot",
+      allowedActions: [],
+      blockedActions: [],
+      allowedProxies: [],
+      allowedConnections: [],
+      requireApprovalOperations: ["destructive"],
+      approvalRequiredActions: ["github.create_issue"],
+      createdAt: "2026-07-20T00:00:00.000Z",
+    };
+
+    const layers = policyLayers(policy, token);
+    expect(layers).toHaveLength(3);
+    expect(layers[2]).toMatchObject({
+      source: "token",
+      rules: {
+        requireApprovalOperations: ["destructive"],
+        approvalRequiredActions: ["github.create_issue"],
+      },
+    });
+  });
+
+  it("flags invalid approval rule syntax in the draft", () => {
+    const draft = createPolicyEditorDraft({
+      ...emptyRules,
+      approvalRequiredActions: ["git*"],
+      approvalExemptActions: ["github.*"],
+    });
+
+    expect(validatePolicyEditorDraft(draft, true)).toContainEqual({
+      field: "approvalRequiredActions",
+      code: "invalid",
+      rule: "git*",
+    });
+    expect(validatePolicyEditorDraft(draft, true)).not.toContainEqual(
+      expect.objectContaining({ field: "approvalExemptActions" }),
+    );
   });
 
   it("requires a rule when the structured editor selects a restricted allow mode", () => {
