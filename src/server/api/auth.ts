@@ -139,6 +139,7 @@ function isPublicPath(path: string, method: string): boolean {
     (method === "GET" && path === "/oauth/saas/complete") ||
     path === "/oauth/callback" ||
     path.startsWith("/oauth/callback/") ||
+    (method === "GET" && (path === "/.well-known/jwks.json" || path === "/.well-known/openid-configuration")) ||
     (method === "GET" && path === "/api/auth/session") ||
     (method === "POST" && path === "/api/auth/logout") ||
     (method === "GET" && path.startsWith("/api/files/")) ||

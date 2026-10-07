@@ -17,7 +17,8 @@
     "showing": "{{shown}} / {{total}} を表示中",
     "success": "成功",
     "cancel": "キャンセル",
-    "undo": "元に戻す"
+    "undo": "元に戻す",
+    "save": "保存"
   },
   "brand": {
     "subtitle": "ローカルランタイムコンソール",
@@ -41,7 +42,8 @@
     "runs": "実行履歴",
     "access": "API Key",
     "docs": "接続ガイド",
-    "approvals": "承認"
+    "approvals": "承認",
+    "pact": "PACT"
   },
   "shell": {
     "invalidUnlockToken": "有効な管理者 token を入力してコンソールをロック解除してください。",
@@ -83,6 +85,9 @@
       },
       "approvals": {
         "title": "承認"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "設定",
@@ -923,5 +928,60 @@
       "revoke": "取り消す"
     },
     "revokeFailed": "許可を取り消せませんでした。"
+  },
+  "pact": {
+    "title": "PACT",
+    "description": "PACT 1.0 delegation のための、パーソナルエージェントの身元 (PA-JWT) と Brand の登録先。",
+    "loadFailed": "PACT の状態を読み込めませんでした。",
+    "identity": {
+      "heading": "身元",
+      "create": "身元を作成",
+      "rotate": "キーをローテーション",
+      "registrationToken": "登録トークン",
+      "empty": "まだ身元がありません。Brand 登録先へ PA-JWT を発行するには作成してください。",
+      "kid": "キー ID",
+      "issuer": "発行者",
+      "jwksUrl": "JWKS URL",
+      "createdAt": "作成日時",
+      "rotatedAt": "ローテーション日時",
+      "previousKid": "以前のキー",
+      "graceBadge": "ローテーション猶予中",
+      "copyKid": "キー ID をコピー",
+      "copied": "コピーしました",
+      "tokenTitle": "登録トークンを発行",
+      "tokenDescription": "Brand がこのデプロイメントを登録する際に検証する一度限りの証明です。issuer と subject はこの Connect のオリジン、audience は Brand が呼び出すエンドポイント URL です。",
+      "tokenAudience": "エンドポイント URL",
+      "tokenValue": "登録トークン",
+      "tokenOnce": "このトークンは一度だけ表示され、保存されません。今すぐコピーしてください。",
+      "copyToken": "トークンをコピー",
+      "mint": "トークンを発行",
+      "tokenFailed": "登録トークンを発行できませんでした。",
+      "subject": "サブジェクト"
+    },
+    "registrations": {
+      "heading": "Brand 登録先",
+      "add": "登録先を追加",
+      "addTitle": "Brand を登録",
+      "editTitle": "登録先を編集",
+      "description": "Brand の信頼されたオリジンと、PA-JWT が発行される audience。",
+      "empty": "登録先がありません",
+      "emptyHint": "Brand を登録して、委譲された呼び出しを許可します。",
+      "enabled": "有効",
+      "disabled": "無効",
+      "saveFailed": "登録先を保存できませんでした。",
+      "columns": {
+        "origin": "プロバイダーのオリジン",
+        "audience": "audience",
+        "status": "状態",
+        "notes": "メモ",
+        "updated": "更新日時"
+      },
+      "fields": {
+        "origin": "プロバイダーのオリジン",
+        "audience": "audience",
+        "notes": "メモ",
+        "enabled": "有効"
+      }
+    }
   }
 }

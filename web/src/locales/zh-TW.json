@@ -17,7 +17,8 @@
     "showing": "顯示 {{shown}} / {{total}}",
     "success": "成功",
     "cancel": "取消",
-    "undo": "復原"
+    "undo": "復原",
+    "save": "儲存"
   },
   "brand": {
     "subtitle": "本機執行階段控制台",
@@ -41,7 +42,8 @@
     "runs": "執行記錄",
     "access": "API 金鑰",
     "docs": "接入指南",
-    "approvals": "核准"
+    "approvals": "核准",
+    "pact": "PACT"
   },
   "shell": {
     "invalidUnlockToken": "請輸入有效的管理員權杖以解鎖控制台。",
@@ -83,6 +85,9 @@
       },
       "approvals": {
         "title": "核准"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "設定",
@@ -923,5 +928,60 @@
       "revoke": "撤銷"
     },
     "revokeFailed": "無法撤銷授權。"
+  },
+  "pact": {
+    "title": "PACT",
+    "description": "用於 PACT 1.0 委派的個人代理身分 (PA-JWT) 和 Brand 註冊。",
+    "loadFailed": "無法載入 PACT 狀態。",
+    "identity": {
+      "heading": "身分",
+      "create": "建立身分",
+      "rotate": "輪換金鑰",
+      "registrationToken": "註冊權杖",
+      "empty": "尚無身分。建立身分後即可為 Brand 註冊簽發 PA-JWT。",
+      "kid": "金鑰 ID",
+      "issuer": "簽發者",
+      "jwksUrl": "JWKS URL",
+      "createdAt": "建立時間",
+      "rotatedAt": "輪換時間",
+      "previousKid": "上一個金鑰",
+      "graceBadge": "輪換寬限期內",
+      "copyKid": "複製金鑰 ID",
+      "copied": "已複製",
+      "tokenTitle": "簽發註冊權杖",
+      "tokenDescription": "Brand 註冊此部署時驗證的一次性憑證。issuer 和 subject 為此 Connect 的來源,audience 為 Brand 將呼叫的端點 URL。",
+      "tokenAudience": "端點 URL",
+      "tokenValue": "註冊權杖",
+      "tokenOnce": "此權杖僅顯示一次,絕不儲存。請立即複製。",
+      "copyToken": "複製權杖",
+      "mint": "簽發權杖",
+      "tokenFailed": "無法簽發註冊權杖。",
+      "subject": "主體"
+    },
+    "registrations": {
+      "heading": "Brand 註冊",
+      "add": "新增註冊",
+      "addTitle": "註冊 Brand",
+      "editTitle": "編輯註冊",
+      "description": "Brand 的可信來源以及簽發 PA-JWT 的 audience。",
+      "empty": "尚無註冊",
+      "emptyHint": "註冊 Brand 以允許對其的委派呼叫。",
+      "enabled": "已啟用",
+      "disabled": "已停用",
+      "saveFailed": "無法儲存註冊。",
+      "columns": {
+        "origin": "提供者來源",
+        "audience": "audience",
+        "status": "狀態",
+        "notes": "備註",
+        "updated": "更新時間"
+      },
+      "fields": {
+        "origin": "提供者來源",
+        "audience": "audience",
+        "notes": "備註",
+        "enabled": "已啟用"
+      }
+    }
   }
 }

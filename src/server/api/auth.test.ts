@@ -10,7 +10,7 @@ describe("createLocalAuthMiddleware", () => {
       createLocalAuthMiddleware({
         resolveRuntimeToken: async (token) =>
           token === "runtime-token"
-            ? { tokenId: "token-1", allowedActions: [], blockedActions: [], allowedProxies: [] }
+            ? { tokenId: "token-1", allowedActions: [], blockedActions: [], allowedProxies: [], subject: "subject-1" }
             : undefined,
       }),
     );
@@ -38,7 +38,7 @@ describe("createLocalAuthMiddleware", () => {
         hasRuntimeTokens: async () => true,
         resolveRuntimeToken: async (token) =>
           token === "oct_valid"
-            ? { tokenId: "token-1", allowedActions: [], blockedActions: [], allowedProxies: [] }
+            ? { tokenId: "token-1", allowedActions: [], blockedActions: [], allowedProxies: [], subject: "subject-1" }
             : undefined,
       }),
     );
@@ -111,7 +111,7 @@ describe("createLocalAuthMiddleware", () => {
   it("resolves dynamic runtime tokens for a lowercase bearer scheme", async () => {
     const resolveRuntimeToken = vi.fn(async (token: string) =>
       token === "oct_valid"
-        ? { tokenId: "token-1", allowedActions: [], blockedActions: [], allowedProxies: [] }
+        ? { tokenId: "token-1", allowedActions: [], blockedActions: [], allowedProxies: [], subject: "subject-1" }
         : undefined,
     );
     const app = new Hono();

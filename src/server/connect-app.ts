@@ -15,6 +15,7 @@ import { MarketplaceService } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthCredentialRefreshService } from "../oauth/oauth-credential-refresh-service.ts";
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
+import { PactIdentityService } from "../pact/pact-identity-service.ts";
 import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
 import { SaasClient } from "../saas/saas-client.ts";
 import { SaasExecutionService } from "../saas/saas-execution-service.ts";
@@ -45,6 +46,8 @@ export interface ConnectAppOptions {
   actionPolicy?: ActionPolicyService;
   /** Pending-approval TTL override; falls back to the service default. */
   approvalTtlSeconds?: number;
+  /** PACT identity/registration wiring; `enabled` mounts every PACT route. */
+  pact?: ConnectPactOptions;
   registerStaticRoutes?: (app: Hono) => void;
   logger?: RuntimeLogger;
   computeRuntimeAuthConfigured?: boolean;
@@ -54,6 +57,15 @@ export interface ConnectAppOptions {
   fetchActionsAsset?: (request: Request) => Promise<Response>;
   /** Streams `/api/providers` from a prebuilt summaries asset when the host serves one (see `IConnectServerOptions`). */
   fetchProvidersAsset?: (request: Request) => Promise<Response>;
+}
+
+export interface ConnectPactOptions {
+  /** `OOMOL_CONNECT_PACT_ENABLED` — every PACT route and service stays off when false. */
+  enabled: boolean;
+  /** `OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS` — JWKS grace for the outgoing key after rotation. */
+  keyGraceSeconds?: number;
+  /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` — reserved for the outbound PACT client (PR4+). */
+  allowInsecureLoopback?: boolean;
 }
 
 export interface ConnectApp {
@@ -137,6 +149,17 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     ttlSeconds: options.approvalTtlSeconds,
     logger: options.logger,
   });
+  const pact = options.pact?.enabled
+    ? {
+        identity: new PactIdentityService({
+          store: options.runtimeDatabase.pactIdentityStore,
+          secretCodec: options.secretCodec,
+          issuer: options.configuredOrigin,
+          keyGraceSeconds: options.pact.keyGraceSeconds,
+        }),
+        registrations: options.runtimeDatabase.pactRegistrationStore,
+      }
+    : undefined;
   return {
     triggerMaintenance,
     approvalMaintenance: new ApprovalMaintenance({ service: approvals, logger: options.logger }),
@@ -167,6 +190,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
       triggers,
       triggerMaintenance,
       approvals,
+      pact,
       idempotency: options.runtimeDatabase.idempotencyStore,
       transitFiles: options.transitFiles,
       uploadTransitFile: options.uploadTransitFile,

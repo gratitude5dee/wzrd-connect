@@ -62,6 +62,7 @@ async function benchmark(filename: string, iterations: number, schema?: string):
         id: `token-${index}`,
         name: `Token ${index}`,
         tokenHash: hashes[index],
+        subject: `subject-${index}`,
         allowedActions: ["github.*"],
         blockedActions: ["github.delete_repository"],
         allowedProxies: ["github"],

@@ -6,6 +6,8 @@ import type { TriggerStore } from "../../triggers/store.ts";
 import type { ApprovalStore } from "./approval-store.ts";
 import type { ConnectionRequestStore } from "./connection-request-store.ts";
 import type { IIdempotencyStore } from "./idempotency-store.ts";
+import type { PactIdentityStore } from "./pact-identity-store.ts";
+import type { PactRegistrationStore } from "./pact-registration-store.ts";
 import type { IRuntimePolicyStore } from "./runtime-policy-store.ts";
 import type { IRunLogStore } from "./runtime-store.ts";
 import type { IRuntimeTokenStore } from "./runtime-token-service.ts";
@@ -24,4 +26,6 @@ export interface RuntimeDatabase {
   idempotencyStore: IIdempotencyStore;
   marketplaceStore: IMarketplaceStore;
   approvalStore: ApprovalStore;
+  pactIdentityStore: PactIdentityStore;
+  pactRegistrationStore: PactRegistrationStore;
 }

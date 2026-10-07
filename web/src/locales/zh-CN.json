@@ -17,7 +17,8 @@
     "showing": "显示 {{shown}} / {{total}}",
     "success": "成功",
     "cancel": "取消",
-    "undo": "撤销"
+    "undo": "撤销",
+    "save": "保存"
   },
   "brand": {
     "subtitle": "本地运行时控制台",
@@ -41,7 +42,8 @@
     "runs": "运行记录",
     "access": "API Key",
     "docs": "接入指南",
-    "approvals": "审批"
+    "approvals": "审批",
+    "pact": "PACT"
   },
   "shell": {
     "invalidUnlockToken": "请输入有效的管理员 token 来解锁控制台。",
@@ -83,6 +85,9 @@
       },
       "approvals": {
         "title": "审批"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "设置",
@@ -923,5 +928,60 @@
       "revoke": "撤销"
     },
     "revokeFailed": "无法撤销授权。"
+  },
+  "pact": {
+    "title": "PACT",
+    "description": "用于 PACT 1.0 委派的个人代理身份 (PA-JWT) 和 Brand 注册。",
+    "loadFailed": "无法加载 PACT 状态。",
+    "identity": {
+      "heading": "身份",
+      "create": "创建身份",
+      "rotate": "轮换密钥",
+      "registrationToken": "注册令牌",
+      "empty": "尚无身份。创建身份后即可为 Brand 注册签发 PA-JWT。",
+      "kid": "密钥 ID",
+      "issuer": "签发者",
+      "jwksUrl": "JWKS URL",
+      "createdAt": "创建时间",
+      "rotatedAt": "轮换时间",
+      "previousKid": "上一个密钥",
+      "graceBadge": "轮换宽限期内",
+      "copyKid": "复制密钥 ID",
+      "copied": "已复制",
+      "tokenTitle": "签发注册令牌",
+      "tokenDescription": "Brand 注册此部署时验证的一次性凭证。issuer 和 subject 为此 Connect 的来源,audience 为 Brand 将调用的端点 URL。",
+      "tokenAudience": "端点 URL",
+      "tokenValue": "注册令牌",
+      "tokenOnce": "此令牌仅显示一次,绝不存储。请立即复制。",
+      "copyToken": "复制令牌",
+      "mint": "签发令牌",
+      "tokenFailed": "无法签发注册令牌。",
+      "subject": "主体"
+    },
+    "registrations": {
+      "heading": "Brand 注册",
+      "add": "添加注册",
+      "addTitle": "注册 Brand",
+      "editTitle": "编辑注册",
+      "description": "Brand 的可信来源以及签发 PA-JWT 的 audience。",
+      "empty": "暂无注册",
+      "emptyHint": "注册 Brand 以允许对其的委派调用。",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "saveFailed": "无法保存注册。",
+      "columns": {
+        "origin": "提供商来源",
+        "audience": "audience",
+        "status": "状态",
+        "notes": "备注",
+        "updated": "更新时间"
+      },
+      "fields": {
+        "origin": "提供商来源",
+        "audience": "audience",
+        "notes": "备注",
+        "enabled": "已启用"
+      }
+    }
   }
 }

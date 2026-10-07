@@ -87,6 +87,8 @@ export interface ConnectorRuntimeOptions {
   actionPolicy?: ActionPolicyConfig;
   /** Pending-approval lifetime in seconds (default 3600). */
   approvalTtlSeconds?: number;
+  /** PACT (agent-side delegation identity). Disabled unless `enabled` is true. */
+  pact?: ConnectorPactOptions;
   /** Services, or `*`, whose connections may carry their own OAuth client instead of the configured one. */
   allowedCustomOAuth?: string[];
   transitFiles?: ConnectorTransitFileOptions;
@@ -102,6 +104,16 @@ export interface ConnectorRuntimeOptions {
   logger?: RuntimeLogger;
   /** The standalone host opts into API-reference HTML. Authorization completion pages are always available. */
   apiReference?: boolean;
+}
+
+/** PACT deployment flags parsed by the host. */
+export interface ConnectorPactOptions {
+  /** `OOMOL_CONNECT_PACT_ENABLED` — every PACT route and service stays off when false. */
+  enabled: boolean;
+  /** `OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS` — JWKS grace for the outgoing key after rotation (default 86400). */
+  keyGraceSeconds?: number;
+  /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` — reserved for the outbound PACT client (PR4+). */
+  allowInsecureLoopback?: boolean;
 }
 
 /** Standard web requests are the host boundary; credentials, databases and framework objects stay private. */
@@ -227,6 +239,7 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
         verifyRuntimeJwt,
         actionPolicy: new ActionPolicyService(options.actionPolicy),
         approvalTtlSeconds: options.approvalTtlSeconds,
+        pact: options.pact,
         allowedCustomOAuth: options.allowedCustomOAuth,
         logger: options.logger,
         serveDocumentation: options.apiReference ?? false,

@@ -581,6 +581,7 @@ describe("MCP server", () => {
           allowedActions: ["example.*"],
           blockedActions: ["example.echo"],
           allowedProxies: [],
+          subject: "subject-1",
         },
       },
     );
@@ -686,6 +687,7 @@ describe("MCP server", () => {
           blockedActions: [],
           allowedProxies: [],
           allowedConnections: ["connection-secondary", "connection-ghost"],
+          subject: "subject-1",
         },
       },
     );

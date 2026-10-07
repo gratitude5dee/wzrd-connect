@@ -62,6 +62,7 @@ describe("SqliteRuntimeDatabase", () => {
       "0017_trigger_subscriptions.sql",
       "0018_token_approval_policy.sql",
       "0019_approvals.sql",
+      "0020_pact_identity.sql",
     ];
     expect(entries.filter((entry) => entry.message === "sqlite migration started")).toEqual(
       migrations.map((migration) => ({ fields: { migration }, message: "sqlite migration started" })),
@@ -887,7 +888,12 @@ describe("SqliteRuntimeDatabase", () => {
           allowedConnections: ["example:work"],
         };
         await second.runtimeTokenStore.updatePolicy(tokenId, policy);
-        await expect(tokens.resolveToken(token)).resolves.toEqual({ tokenId, ...policy, allowedTriggers: [] });
+        await expect(tokens.resolveToken(token)).resolves.toEqual({
+          tokenId,
+          ...policy,
+          allowedTriggers: [],
+          subject: created.record.subject,
+        });
       } finally {
         second.close();
       }

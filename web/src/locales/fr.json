@@ -17,7 +17,8 @@
     "showing": "{{shown}} sur {{total}} affichés",
     "success": "Succès",
     "cancel": "Annuler",
-    "undo": "Annuler"
+    "undo": "Annuler",
+    "save": "Enregistrer"
   },
   "brand": {
     "subtitle": "Console du runtime local",
@@ -41,7 +42,8 @@
     "runs": "Exécutions",
     "access": "API Key",
     "docs": "Connecter des clients",
-    "approvals": "Approbations"
+    "approvals": "Approbations",
+    "pact": "PACT"
   },
   "shell": {
     "invalidUnlockToken": "Saisissez un token administrateur valide pour déverrouiller la console.",
@@ -83,6 +85,9 @@
       },
       "approvals": {
         "title": "Approbations"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "Paramètres",
@@ -923,5 +928,60 @@
       "revoke": "Révoquer"
     },
     "revokeFailed": "Impossible de révoquer l'autorisation."
+  },
+  "pact": {
+    "title": "PACT",
+    "description": "Identité de l'agent personnel (PA-JWT) et enregistrements de marques pour la délégation PACT 1.0.",
+    "loadFailed": "Impossible de charger l'état PACT.",
+    "identity": {
+      "heading": "Identité",
+      "create": "Créer l'identité",
+      "rotate": "Renouveler la clé",
+      "registrationToken": "Jeton d'enregistrement",
+      "empty": "Pas encore d'identité. Créez-en une pour émettre des PA-JWT pour les enregistrements de marques.",
+      "kid": "ID de clé",
+      "issuer": "Émetteur",
+      "jwksUrl": "URL JWKS",
+      "createdAt": "Créée",
+      "rotatedAt": "Renouvelée",
+      "previousKid": "Clé précédente",
+      "graceBadge": "période de grâce",
+      "copyKid": "Copier l'ID de clé",
+      "copied": "Copié",
+      "tokenTitle": "Émettre un jeton d'enregistrement",
+      "tokenDescription": "Preuve unique que la marque valide lors de l'enregistrement de ce déploiement. L'émetteur et le sujet sont l'origine Connect ; l'audience est l'URL d'endpoint que la marque appellera.",
+      "tokenAudience": "URL d'endpoint",
+      "tokenValue": "Jeton d'enregistrement",
+      "tokenOnce": "Ce jeton n'est affiché qu'une seule fois et n'est jamais stocké. Copiez-le maintenant.",
+      "copyToken": "Copier le jeton",
+      "mint": "Émettre le jeton",
+      "tokenFailed": "Impossible d'émettre le jeton d'enregistrement.",
+      "subject": "Sujet"
+    },
+    "registrations": {
+      "heading": "Enregistrements de marques",
+      "add": "Ajouter un enregistrement",
+      "addTitle": "Enregistrer une marque",
+      "editTitle": "Modifier l'enregistrement",
+      "description": "L'origine de confiance d'une marque et l'audience pour laquelle les PA-JWT sont émis.",
+      "empty": "Aucun enregistrement",
+      "emptyHint": "Enregistrez une marque pour autoriser les appels délégués vers elle.",
+      "enabled": "Activé",
+      "disabled": "Désactivé",
+      "saveFailed": "Impossible d'enregistrer l'enregistrement.",
+      "columns": {
+        "origin": "Origine du fournisseur",
+        "audience": "Audience",
+        "status": "Statut",
+        "notes": "Notes",
+        "updated": "Mis à jour"
+      },
+      "fields": {
+        "origin": "Origine du fournisseur",
+        "audience": "Audience",
+        "notes": "Notes",
+        "enabled": "Activé"
+      }
+    }
   }
 }

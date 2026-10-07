@@ -6,6 +6,7 @@ import type { ProviderHttpDispatchOptions } from "../core/provider-http-dispatch
 import type { RuntimeLogger, TransitFileUpload } from "../core/types.ts";
 import type { MarketplaceConfigInput, MarketplaceService } from "../marketplace/marketplace-service.ts";
 import type { OAuthClientConfigInput } from "../oauth/oauth-client-config-service.ts";
+import type { PactIdentityErrorCode, PactIdentityService } from "../pact/pact-identity-service.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { SaasExecutionService } from "../saas/saas-execution-service.ts";
 import type { SaasOAuthService } from "../saas/saas-oauth-service.ts";
@@ -13,12 +14,13 @@ import type { SaasProjectService } from "../saas/saas-project-service.ts";
 import type { TriggerMaintenance } from "../triggers/maintenance.ts";
 import type { TriggerRunner } from "../triggers/trigger-runner.ts";
 import type { LocalAuthOptions } from "./api/auth.ts";
-import type { RuntimeActionHttpResult } from "./api/runtime-api.ts";
+import type { RuntimeActionHttpResult, RuntimeStatus } from "./api/runtime-api.ts";
 import type { ApprovalGate, ApprovalGateRequest } from "./approvals/approval-gate.ts";
 import type { ApprovalService, CreateGrantInput } from "./approvals/approval-service.ts";
 import type { ITransitFileService } from "./files/transit-file-store.ts";
 import type { ApprovalGrantRecord, ApprovalRecord } from "./storage/approval-store.ts";
 import type { IIdempotencyStore } from "./storage/idempotency-store.ts";
+import type { PactRegistrationStore } from "./storage/pact-registration-store.ts";
 import type { IRuntimePolicyStore } from "./storage/runtime-policy-store.ts";
 import type { RunLogCaller, RunLogListInput } from "./storage/runtime-store.ts";
 import type { RuntimeTokenService } from "./storage/runtime-token-service.ts";
@@ -40,9 +42,11 @@ import {
 } from "../core/cast.ts";
 import { PromiseCache } from "../core/promise-cache.ts";
 import { withProviderHttpDispatch } from "../core/provider-http-dispatch.ts";
+import { randomUUIDv7 } from "../core/uuid-v7.ts";
 import { MarketplaceError } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigError, OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthCallbackError, OAuthFlowError, OAuthFlowService } from "../oauth/oauth-flow-service.ts";
+import { PactIdentityError, pactJwksCacheControl } from "../pact/pact-identity-service.ts";
 import { ProviderDispatchRequestError, toProviderExecutionError } from "../providers/provider-runtime.ts";
 import { SaasError } from "../saas/saas-client.ts";
 import {
@@ -87,6 +91,7 @@ import { renderSaasCompletionPage } from "./api/saas-completion-page.ts";
 import { ApprovalRequestError, approvalPollIntervalSeconds } from "./approvals/approval-service.ts";
 import { TransitFileError } from "./files/transit-file-store.ts";
 import { ProxyRunner } from "./proxy/proxy-runner.ts";
+import { PactRegistrationConflictError } from "./storage/pact-registration-store.ts";
 import { decodeRunLogCursor } from "./storage/runtime-store.ts";
 import { summarizeRuntimeToken } from "./storage/runtime-token-service.ts";
 
@@ -145,6 +150,8 @@ export interface IConnectServerOptions {
   transitFiles: ITransitFileService;
   /** Approval checkpoint; absent means the approval overlay and routes stay off. */
   approvals?: ApprovalService;
+  /** PACT identity + Brand registry; absent means every PACT route stays off. */
+  pact?: PactServerOptions;
   uploadTransitFile?: (request: Request) => Promise<TransitFileUpload>;
   auth?: LocalAuthOptions;
   actionPolicy?: ActionPolicyService;
@@ -173,6 +180,11 @@ export interface IConnectServerOptions {
   saasProject?: SaasProjectService;
   saas?: SaasExecutionService;
   saasOAuth?: SaasOAuthService;
+}
+
+export interface PactServerOptions {
+  identity: PactIdentityService;
+  registrations: PactRegistrationStore;
 }
 
 /**
@@ -343,6 +355,30 @@ export class ConnectServer {
       app.post("/api/approvals/:id/deny", (context) => this.decideApproval(context, context.req.param("id"), "deny"));
       app.get("/api/approval-grants", (context) => this.listApprovalGrants(context));
       app.delete("/api/approval-grants/:id", (context) => this.deleteApprovalGrant(context, context.req.param("id")));
+    }
+    if (this.options.pact) {
+      app.get("/.well-known/jwks.json", (context) => this.getPactJwks(context));
+      app.get("/.well-known/openid-configuration", (context) => this.getPactOpenIdConfiguration(context));
+      app.get("/api/pact/identity", (context) => this.getPactIdentity(context));
+      app.post("/api/pact/identity", (context) => this.createPactIdentity(context));
+      app.post("/api/pact/identity/rotate", (context) => this.rotatePactIdentity(context));
+      app.post("/api/pact/identity/registration-token", (context) => this.createPactRegistrationToken(context));
+      app.get("/api/pact/registrations", (context) => this.listPactRegistrations(context));
+      app.post("/api/pact/registrations", (context) => this.createPactRegistration(context));
+      app.put("/api/pact/registrations/:id", (context) =>
+        this.updatePactRegistration(context, context.req.param("id")),
+      );
+      app.delete("/api/pact/registrations/:id", (context) =>
+        this.deletePactRegistration(context, context.req.param("id")),
+      );
+      app.post("/api/runtime-tokens/:id/rotate-subject", (context) =>
+        this.rotateRuntimeTokenSubject(context, context.req.param("id")),
+      );
+    } else {
+      // A verifier probing the well-known paths with PACT off must get a real
+      // 404, not the SPA catch-all's 200.
+      app.get("/.well-known/jwks.json", notFound);
+      app.get("/.well-known/openid-configuration", notFound);
     }
     const saas = this.options.saasProject;
     if (saas) {
@@ -1852,6 +1888,143 @@ export class ConnectServer {
     return context.json({ id, revoked: true });
   }
 
+  private async rotateRuntimeTokenSubject(context: Context, id: string): Promise<Response> {
+    const token = await this.options.runtimeTokens.rotateTokenSubject(id);
+    return token
+      ? context.json(token)
+      : jsonError(context, 404, "runtime_token_not_found", `Runtime token not found: ${id}.`);
+  }
+
+  private async getPactJwks(context: Context): Promise<Response> {
+    context.header("Cache-Control", pactJwksCacheControl);
+    return context.json(await this.pactIdentity().getJwks());
+  }
+
+  private getPactOpenIdConfiguration(context: Context): Response {
+    context.header("Cache-Control", pactJwksCacheControl);
+    const configuration = this.pactIdentity().getOpenIdConfiguration();
+    return configuration
+      ? context.json(configuration)
+      : jsonError(context, 404, "pact_origin_required", "OOMOL_CONNECT_ORIGIN is not configured.");
+  }
+
+  private async getPactIdentity(context: Context): Promise<Response> {
+    return context.json({ identity: (await this.pactIdentity().get()) ?? null });
+  }
+
+  private async createPactIdentity(context: Context): Promise<Response> {
+    try {
+      return context.json({ identity: await this.pactIdentity().create() });
+    } catch (error) {
+      return this.pactError(context, error);
+    }
+  }
+
+  private async rotatePactIdentity(context: Context): Promise<Response> {
+    try {
+      return context.json({ identity: await this.pactIdentity().rotate() });
+    } catch (error) {
+      return this.pactError(context, error);
+    }
+  }
+
+  /**
+   * Mint the one-time registration proof (`iss`/`sub` the issuer, `aud` the
+   * Brand endpoint URL). The token is returned here and nowhere else — it is
+   * never stored or re-shown.
+   */
+  private async createPactRegistrationToken(context: Context): Promise<Response> {
+    const body = await readJsonBody(context, policyRequestMaxBytes);
+    const audience = optionalString(body.audience);
+    if (!audience || !isHttpUrl(audience)) {
+      return jsonError(context, 400, "invalid_input", "audience must be an absolute http(s) URL.");
+    }
+    try {
+      return context.json({ token: await this.pactIdentity().signRegistrationToken(audience) });
+    } catch (error) {
+      return this.pactError(context, error);
+    }
+  }
+
+  private async listPactRegistrations(context: Context): Promise<Response> {
+    return context.json({ items: await this.pactRegistrations().list() });
+  }
+
+  private async createPactRegistration(context: Context): Promise<Response> {
+    const body = await readJsonBody(context, policyRequestMaxBytes);
+    const providerOrigin = readProviderOrigin(body.providerOrigin);
+    const audience = optionalString(body.audience);
+    if (!providerOrigin) {
+      return jsonError(context, 400, "invalid_input", "providerOrigin must be an absolute http(s) origin.");
+    }
+    if (!audience) {
+      return jsonError(context, 400, "invalid_input", "audience is required.");
+    }
+    try {
+      const registration = await this.pactRegistrations().create({
+        id: randomUUIDv7(),
+        providerOrigin,
+        audience,
+        enabled: body.enabled !== false,
+        notes: optionalString(body.notes),
+        now: new Date().toISOString(),
+      });
+      return context.json({ registration });
+    } catch (error) {
+      return this.pactError(context, error);
+    }
+  }
+
+  private async updatePactRegistration(context: Context, id: string): Promise<Response> {
+    const body = await readJsonBody(context, policyRequestMaxBytes);
+    const input = {
+      providerOrigin: body.providerOrigin !== undefined ? readProviderOrigin(body.providerOrigin) : undefined,
+      audience: optionalString(body.audience),
+      enabled: typeof body.enabled === "boolean" ? body.enabled : undefined,
+      notes: body.notes === null ? null : optionalString(body.notes),
+      now: new Date().toISOString(),
+    };
+    if (body.providerOrigin !== undefined && !input.providerOrigin) {
+      return jsonError(context, 400, "invalid_input", "providerOrigin must be an absolute http(s) origin.");
+    }
+    if (body.audience !== undefined && !input.audience) {
+      return jsonError(context, 400, "invalid_input", "audience must be a non-empty string.");
+    }
+    try {
+      const registration = await this.pactRegistrations().update(id, input);
+      return registration
+        ? context.json({ registration })
+        : jsonError(context, 404, "pact_registration_not_found", `PACT registration not found: ${id}.`);
+    } catch (error) {
+      return this.pactError(context, error);
+    }
+  }
+
+  private async deletePactRegistration(context: Context, id: string): Promise<Response> {
+    if (!(await this.pactRegistrations().delete(id))) {
+      return jsonError(context, 404, "pact_registration_not_found", `PACT registration not found: ${id}.`);
+    }
+    return context.json({ id, deleted: true });
+  }
+
+  private pactIdentity(): PactIdentityService {
+    return this.options.pact!.identity;
+  }
+
+  private pactRegistrations(): PactRegistrationStore {
+    return this.options.pact!.registrations;
+  }
+
+  private pactError(context: Context, error: unknown): Response {
+    if (error instanceof PactIdentityError) {
+      return jsonError(context, pactIdentityErrorStatus(error.code), error.code, error.message);
+    }
+    if (error instanceof PactRegistrationConflictError) {
+      return jsonError(context, 409, "pact_registration_exists", error.message);
+    }
+    throw error;
+  }
+
   private async getRuntimePolicy(context: Context): Promise<Response> {
     return context.json((await this.getPolicySnapshot(context)).state);
   }
@@ -2376,4 +2549,41 @@ function serializeApprovalGrant(grant: ApprovalGrantRecord): Record<string, unkn
     createdBy: grant.createdBy,
     createdAt: grant.createdAt,
   };
+}
+
+function pactIdentityErrorStatus(code: PactIdentityErrorCode): RuntimeStatus {
+  switch (code) {
+    case "pact_identity_not_found":
+      return 404;
+    case "pact_identity_exists":
+      return 409;
+    default:
+      return 400;
+  }
+}
+
+/** Absolute http(s) URL check for the registration-token `aud`. */
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+/** Parse `providerOrigin` and reduce it to the bare http(s) origin stored under the uniqueness key. */
+function readProviderOrigin(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      return undefined;
+    }
+    return url.origin;
+  } catch {
+    return undefined;
+  }
 }

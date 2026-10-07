@@ -26,6 +26,8 @@ import { PlainTextSecretCodec } from "../../secrets/secret-codec-core.ts";
 import { ApprovalStore } from "../approval-store.ts";
 import { ConnectionRequestStore } from "../connection-request-store.ts";
 import { SqlConnectionStore } from "../connection-store.ts";
+import { PactIdentityStore } from "../pact-identity-store.ts";
+import { PactRegistrationStore } from "../pact-registration-store.ts";
 import {
   listRunLogs,
   parseJson,
@@ -59,6 +61,8 @@ export class D1RuntimeDatabase implements RuntimeDatabase {
   readonly idempotencyStore: D1IdempotencyStore;
   readonly marketplaceStore: IMarketplaceStore;
   readonly approvalStore: ApprovalStore;
+  readonly pactIdentityStore: PactIdentityStore;
+  readonly pactRegistrationStore: PactRegistrationStore;
 
   constructor(database: D1DatabaseBinding, options: D1RuntimeDatabaseOptions = {}) {
     const secretCodec = options.secretCodec ?? new PlainTextSecretCodec();
@@ -71,6 +75,8 @@ export class D1RuntimeDatabase implements RuntimeDatabase {
     this.triggerStore = new SqlTriggerStore(transaction, secretCodec);
     this.saasProjectStore = new SaasProjectStore(transaction, secretCodec);
     this.approvalStore = new ApprovalStore(transaction, secretCodec);
+    this.pactIdentityStore = new PactIdentityStore(transaction, secretCodec);
+    this.pactRegistrationStore = new PactRegistrationStore(transaction);
     this.oauthClientConfigStore = new D1OAuthClientConfigStore(database, secretCodec);
     this.oauthStateStore = new D1OAuthStateStore(database, secretCodec);
     this.runtimeTokenStore = new D1RuntimeTokenStore(database);
@@ -219,7 +225,7 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
         insert into runtime_tokens (
           ${runtimeTokenColumns}
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
       .bind(
@@ -235,6 +241,7 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(record.approvalRequiredActions ?? []),
         record.createdAt,
         record.lastUsedAt ?? null,
+        record.subject,
       )
       .run();
   }
@@ -286,6 +293,21 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(policy.approvalRequiredActions ?? []),
         id,
       )
+      .first<RuntimeRow>();
+    return row ? readRuntimeTokenRow(row) : undefined;
+  }
+
+  async updateSubject(id: string, subject: string): Promise<RuntimeTokenRecord | undefined> {
+    const row = await this.database
+      .prepare(
+        `
+        update runtime_tokens
+        set subject = ?
+        where id = ?
+        returning ${runtimeTokenColumns}
+      `,
+      )
+      .bind(subject, id)
       .first<RuntimeRow>();
     return row ? readRuntimeTokenRow(row) : undefined;
   }

@@ -245,6 +245,7 @@ Issues and pull requests are welcome.
 - [Docker image (GHCR)](docs/docker-ghcr.md)
 - [Single binary](docs/single-binary.md)
 - [Configuration](docs/configuration.md)
+- [PACT identity and Brand registrations](docs/pact.md)
 - [Credentials and OAuth](docs/credentials.md)
 - [Catalog format](docs/catalog-format.md)
 - [Verification language](docs/verification.md)

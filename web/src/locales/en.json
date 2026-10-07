@@ -17,7 +17,8 @@
     "showing": "Showing {{shown}} of {{total}}",
     "success": "Success",
     "cancel": "Cancel",
-    "undo": "Undo"
+    "undo": "Undo",
+    "save": "Save"
   },
   "brand": {
     "subtitle": "Local runtime console",
@@ -41,7 +42,8 @@
     "runs": "Runs",
     "access": "API Key",
     "docs": "Connect clients",
-    "approvals": "Approvals"
+    "approvals": "Approvals",
+    "pact": "PACT"
   },
   "shell": {
     "invalidUnlockToken": "Enter a valid admin token to unlock the console.",
@@ -83,6 +85,9 @@
       },
       "approvals": {
         "title": "Approvals"
+      },
+      "pact": {
+        "title": "PACT"
       }
     },
     "settings": "Settings",
@@ -923,5 +928,60 @@
       "revoke": "Revoke"
     },
     "revokeFailed": "Could not revoke the grant."
+  },
+  "pact": {
+    "title": "PACT",
+    "description": "Personal agent identity (PA-JWT) and Brand registrations for PACT 1.0 delegation.",
+    "loadFailed": "Could not load the PACT state.",
+    "identity": {
+      "heading": "Identity",
+      "create": "Create identity",
+      "rotate": "Rotate key",
+      "registrationToken": "Registration token",
+      "empty": "No identity yet. Create one to mint PA-JWTs for Brand registrations.",
+      "kid": "Key ID",
+      "issuer": "Issuer",
+      "jwksUrl": "JWKS URL",
+      "createdAt": "Created",
+      "rotatedAt": "Rotated",
+      "previousKid": "Previous key",
+      "graceBadge": "in rotation grace",
+      "copyKid": "Copy key ID",
+      "copied": "Copied",
+      "tokenTitle": "Mint a registration token",
+      "tokenDescription": "A one-time proof for the Brand to validate when it registers this deployment. Issuer and subject are this Connect origin; audience is the endpoint URL the Brand will call.",
+      "tokenAudience": "Endpoint URL",
+      "tokenValue": "Registration token",
+      "tokenOnce": "This token is shown once and is never stored. Copy it now.",
+      "copyToken": "Copy token",
+      "mint": "Mint token",
+      "tokenFailed": "Could not mint the registration token.",
+      "subject": "Subject"
+    },
+    "registrations": {
+      "heading": "Brand registrations",
+      "add": "Add registration",
+      "addTitle": "Register a Brand",
+      "editTitle": "Edit registration",
+      "description": "A Brand's trusted origin and the audience PA-JWTs are minted for.",
+      "empty": "No registrations",
+      "emptyHint": "Register a Brand to allow delegated calls to it.",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "saveFailed": "Could not save the registration.",
+      "columns": {
+        "origin": "Provider origin",
+        "audience": "Audience",
+        "status": "Status",
+        "notes": "Notes",
+        "updated": "Updated"
+      },
+      "fields": {
+        "origin": "Provider origin",
+        "audience": "Audience",
+        "notes": "Notes",
+        "enabled": "Enabled"
+      }
+    }
   }
 }
