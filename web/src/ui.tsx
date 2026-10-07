@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Settings,
   ShieldCheck,
+  Signature,
   Sun,
   TerminalSquare,
 } from "lucide-react";
@@ -41,6 +42,7 @@ import { persistLang, supportedLangs } from "./i18n";
 import { emptyData } from "./model";
 import { OAuthAppsPage } from "./oauth-apps-page";
 import { OverviewPage } from "./overview-page";
+import { PactPage } from "./pact-page";
 import { ProvidersPage } from "./providers-page";
 import { ResourcesPage } from "./resources-page";
 import { RunsPage } from "./runs-page";
@@ -60,6 +62,7 @@ const navItems = [
   { path: "/actions", labelKey: "nav.actions", icon: TerminalSquare },
   { path: "/runs", labelKey: "nav.runs", icon: Activity },
   { path: "/approvals", labelKey: "nav.approvals", icon: ShieldCheck, badge: true },
+  { path: "/pact", labelKey: "nav.pact", icon: Signature },
   { path: "/access", labelKey: "nav.access", icon: KeyRound },
   { path: "/resources", labelKey: "nav.docs", icon: BookOpen },
 ] as const;
@@ -497,6 +500,7 @@ function AppShell(props: {
             />
             <Route path="/approvals" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
             <Route path="/approvals/:approvalId" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
+            <Route path="/pact" element={<PactPage onRefresh={props.onRefresh} />} />
             <Route
               path="/access"
               element={
@@ -673,6 +677,9 @@ function headingForPath(pathname: string): string {
   }
   if (section === "approvals") {
     return "approvals";
+  }
+  if (section === "pact") {
+    return "pact";
   }
   if (section === "access") {
     return "access";

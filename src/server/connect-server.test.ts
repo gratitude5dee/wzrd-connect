@@ -39,6 +39,7 @@ import { buildActionSearchIndex } from "../core/action-search.ts";
 import { MarketplaceError, MarketplaceService } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
+import { PactIdentityService } from "../pact/pact-identity-service.ts";
 import { actionInputMaxDepth, hashActionRequest, hashIdempotencyKey } from "./actions/action-idempotency.ts";
 import { ActionRunner } from "./actions/action-runner.ts";
 import { registerStaticRoutes } from "./api/static-routes.ts";
@@ -4316,6 +4317,8 @@ interface CreateTestServerOptions {
   secretCodec?: ISecretCodec;
   allowedCustomOAuth?: string[];
   executableActionIds?: string[];
+  /** Mounts every PACT route when truthy; the service gates are exercised by passing a plaintext codec. */
+  pact?: boolean | { issuer?: string; keyGraceSeconds?: number };
 }
 
 function createTestServer(providers: ProviderDefinition[], options: CreateTestServerOptions = {}): ConnectServer {
@@ -4394,6 +4397,17 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
     actionPolicy: options.actionPolicy,
     actionSearch: options.actionSearch,
     approvals: options.approvals,
+    pact: options.pact
+      ? {
+          identity: new PactIdentityService({
+            store: requestDatabase.pactIdentityStore,
+            secretCodec: options.secretCodec ?? new PlainTextSecretCodec(),
+            issuer: typeof options.pact === "object" ? options.pact.issuer : "http://localhost:3000",
+            keyGraceSeconds: typeof options.pact === "object" ? options.pact.keyGraceSeconds : undefined,
+          }),
+          registrations: requestDatabase.pactRegistrationStore,
+        }
+      : undefined,
     logger: options.logger,
   });
 }
@@ -4694,6 +4708,16 @@ class MemoryRuntimeTokenStore implements IRuntimeTokenStore {
     return updated;
   }
 
+  async updateSubject(id: string, subject: string): Promise<RuntimeTokenRecord | undefined> {
+    const token = this.tokens.get(id);
+    if (!token) {
+      return undefined;
+    }
+    const updated = { ...token, subject };
+    this.tokens.set(id, updated);
+    return updated;
+  }
+
   async revoke(id: string): Promise<boolean> {
     return this.tokens.delete(id);
   }
@@ -4846,3 +4870,205 @@ function createRunLog(id: string, startedAt: string): RunLog {
     ok: true,
   };
 }
+
+describe("ConnectServer PACT routes", () => {
+  function createPactApp(options: CreateTestServerOptions = {}) {
+    return createTestServer([apiKeyProvider], { pact: true, ...options }).createApp();
+  }
+
+  it("returns 404 for every PACT route when the feature flag is off", async () => {
+    const app = createTestServer([apiKeyProvider]).createApp();
+    const paths = [
+      "/.well-known/jwks.json",
+      "/.well-known/openid-configuration",
+      "/api/pact/identity",
+      "/api/pact/registrations",
+    ];
+    for (const path of paths) {
+      expect((await app.request(path)).status).toBe(404);
+    }
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(404);
+    expect((await app.request("/api/runtime-tokens/token-1/rotate-subject", { method: "POST" })).status).toBe(404);
+  });
+
+  it("answers identity creation with 400 encryption_required when no key codec is configured", async () => {
+    const app = createPactApp();
+    const response = await app.request("/api/pact/identity", { method: "POST" });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "encryption_required" } });
+  });
+
+  it("creates the identity, serves it publicly via JWKS, and rejects a second create", async () => {
+    const app = createPactApp({ secretCodec: new AesGcmSecretCodec("test-encryption-key") });
+    const created = await app.request("/api/pact/identity", { method: "POST" });
+    expect(created.status).toBe(200);
+    const { identity } = (await created.json()) as { identity: Record<string, unknown> };
+    expect(identity).toMatchObject({
+      issuer: "http://localhost:3000",
+      jwksUrl: "http://localhost:3000/.well-known/jwks.json",
+      subject: "configured",
+    });
+    expect(identity.kid).toEqual(expect.any(String));
+
+    const jwks = await app.request("/.well-known/jwks.json");
+    expect(jwks.status).toBe(200);
+    expect(jwks.headers.get("cache-control")).toBe("public, max-age=300");
+    const { keys } = (await jwks.json()) as { keys: Record<string, unknown>[] };
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toMatchObject({ kty: "EC", crv: "P-256", alg: "ES256", use: "sig", kid: identity.kid });
+    expect(keys[0].d).toBeUndefined();
+
+    const configuration = await app.request("/.well-known/openid-configuration");
+    expect(configuration.status).toBe(200);
+    await expect(configuration.json()).resolves.toEqual({
+      issuer: "http://localhost:3000",
+      jwks_uri: "http://localhost:3000/.well-known/jwks.json",
+    });
+
+    const duplicate = await app.request("/api/pact/identity", { method: "POST" });
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toMatchObject({ error: { code: "pact_identity_exists" } });
+  });
+
+  it("serves the previous key during the rotation grace window", async () => {
+    const app = createPactApp({ secretCodec: new AesGcmSecretCodec("test-encryption-key") });
+    const first = (
+      (await (await app.request("/api/pact/identity", { method: "POST" })).json()) as {
+        identity: { kid: string };
+      }
+    ).identity;
+    const rotated = await app.request("/api/pact/identity/rotate", { method: "POST" });
+    expect(rotated.status).toBe(200);
+    const next = ((await rotated.json()) as { identity: { kid: string; previousKid: string } }).identity;
+    expect(next.previousKid).toBe(first.kid);
+
+    const { keys } = (await (await app.request("/.well-known/jwks.json")).json()) as {
+      keys: { kid: string }[];
+    };
+    expect(keys.map((key) => key.kid)).toEqual([next.kid, first.kid]);
+  });
+
+  it("mints a registration token that verifies against the public JWKS", async () => {
+    const app = createPactApp({ secretCodec: new AesGcmSecretCodec("test-encryption-key") });
+    await app.request("/api/pact/identity", { method: "POST" });
+    const { createLocalJWKSet, decodeJwt, jwtVerify } = await import("jose");
+
+    const missing = await app.request("/api/pact/identity/registration-token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(missing.status).toBe(400);
+
+    const response = await app.request("/api/pact/identity/registration-token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ audience: "https://provider.example.com/pact/register" }),
+    });
+    expect(response.status).toBe(200);
+    const { token } = (await response.json()) as { token: string };
+    const claims = decodeJwt(token);
+    expect(claims.iss).toBe("http://localhost:3000");
+    expect(claims.sub).toBe("http://localhost:3000");
+    expect(claims.aud).toBe("https://provider.example.com/pact/register");
+    expect(claims.exp! - claims.iat!).toBeLessThanOrEqual(300);
+
+    const jwks = createLocalJWKSet((await (await app.request("/.well-known/jwks.json")).json()) as never);
+    await expect(
+      jwtVerify(token, jwks, {
+        issuer: "http://localhost:3000",
+        audience: "https://provider.example.com/pact/register",
+        algorithms: ["ES256", "RS256"],
+        clockTolerance: 30,
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("manages registrations with origin uniqueness", async () => {
+    const app = createPactApp({ secretCodec: new AesGcmSecretCodec("test-encryption-key") });
+    const invalid = await app.request("/api/pact/registrations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ providerOrigin: "not-a-url", audience: "brand" }),
+    });
+    expect(invalid.status).toBe(400);
+
+    const created = await app.request("/api/pact/registrations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        providerOrigin: "https://brand.example.com/path?ignored=1",
+        audience: "https://brand.example.com",
+        notes: "primary brand",
+      }),
+    });
+    expect(created.status).toBe(200);
+    const { registration } = (await created.json()) as { registration: Record<string, unknown> };
+    expect(registration).toMatchObject({
+      providerOrigin: "https://brand.example.com",
+      audience: "https://brand.example.com",
+      enabled: true,
+      notes: "primary brand",
+    });
+
+    const duplicate = await app.request("/api/pact/registrations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ providerOrigin: "https://brand.example.com", audience: "other" }),
+    });
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toMatchObject({ error: { code: "pact_registration_exists" } });
+
+    const updated = await app.request(`/api/pact/registrations/${registration.id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: false, notes: null }),
+    });
+    expect(updated.status).toBe(200);
+    const updatedBody = (await updated.json()) as { registration: { enabled: boolean; notes?: string } };
+    expect(updatedBody.registration.enabled).toBe(false);
+    expect(updatedBody.registration.notes).toBeUndefined();
+
+    const listed = await app.request("/api/pact/registrations");
+    await expect(listed.json()).resolves.toMatchObject({
+      items: [{ id: registration.id, providerOrigin: "https://brand.example.com" }],
+    });
+
+    expect((await app.request(`/api/pact/registrations/${registration.id}`, { method: "DELETE" })).status).toBe(200);
+    expect((await app.request(`/api/pact/registrations/${registration.id}`, { method: "DELETE" })).status).toBe(404);
+  });
+
+  it("rotates a runtime token subject and keeps it stable until then", async () => {
+    const runtimeTokens = new RuntimeTokenService(new MemoryRuntimeTokenStore());
+    const app = createPactApp({
+      runtimeTokens,
+      secretCodec: new AesGcmSecretCodec("test-encryption-key"),
+    });
+    const first = await runtimeTokens.createToken("agent-a");
+    const second = await runtimeTokens.createToken("agent-b");
+
+    // Every token receives a distinct subject at creation; it resolves through the grant.
+    expect(first.record.subject).toEqual(expect.any(String));
+    expect(second.record.subject).toEqual(expect.any(String));
+    expect(first.record.subject).not.toBe(second.record.subject);
+    await expect(runtimeTokens.resolveToken(first.token)).resolves.toMatchObject({
+      subject: first.record.subject,
+    });
+    await expect(runtimeTokens.resolveToken(first.token)).resolves.toMatchObject({
+      subject: first.record.subject,
+    });
+
+    const rotated = await app.request(`/api/runtime-tokens/${first.record.id}/rotate-subject`, {
+      method: "POST",
+    });
+    expect(rotated.status).toBe(200);
+    const updated = (await rotated.json()) as { subject: string };
+    expect(updated.subject).toEqual(expect.any(String));
+    expect(updated.subject).not.toBe(first.record.subject);
+    await expect(runtimeTokens.resolveToken(first.token)).resolves.toMatchObject({
+      subject: updated.subject,
+    });
+
+    expect((await app.request("/api/runtime-tokens/missing/rotate-subject", { method: "POST" })).status).toBe(404);
+  });
+});

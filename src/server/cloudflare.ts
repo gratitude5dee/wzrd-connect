@@ -23,7 +23,7 @@ import {
   serveActionsFromAssets,
   serveProvidersFromAssets,
 } from "./cloudflare/catalog-assets.ts";
-import { readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
+import { parseBooleanFlag, readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
 import { createConnectApp } from "./connect-app.ts";
 import { KVTransitFileService } from "./files/kv-transit-files.ts";
 import { R2TransitFileService } from "./files/r2-transit-files.ts";
@@ -141,6 +141,11 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
     }),
     allowedCustomOAuth: parseActionPolicyList(env.OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH),
     approvalTtlSeconds: readPositiveInteger(env.OOMOL_CONNECT_APPROVAL_TTL_SECONDS, DEFAULT_APPROVAL_TTL_SECONDS),
+    pact: {
+      enabled: parseBooleanFlag(env.OOMOL_CONNECT_PACT_ENABLED),
+      keyGraceSeconds: readPositiveInteger(env.OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS, 86_400),
+      allowInsecureLoopback: parseBooleanFlag(env.OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK),
+    },
     logger: workerLogger,
     computeRuntimeAuthConfigured: false,
     // Cloudflare compresses on egress itself: Response defaults to
@@ -210,6 +215,9 @@ function createCacheKey(env: CloudflareEnv, publicOrigin: string): string {
     transitFileMaxBytes: env.OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES ?? "",
     runLimit: env.OOMOL_CONNECT_RUN_LIMIT ?? "",
     approvalTtlSeconds: env.OOMOL_CONNECT_APPROVAL_TTL_SECONDS ?? "",
+    pactEnabled: env.OOMOL_CONNECT_PACT_ENABLED ?? "",
+    pactKeyGraceSeconds: env.OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS ?? "",
+    pactAllowInsecureLoopback: env.OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK ?? "",
   });
 }
 

@@ -30,6 +30,8 @@ import { PlainTextSecretCodec } from "../../secrets/secret-codec-core.ts";
 import { ApprovalStore } from "../approval-store.ts";
 import { ConnectionRequestStore } from "../connection-request-store.ts";
 import { SqlConnectionStore } from "../connection-store.ts";
+import { PactIdentityStore } from "../pact-identity-store.ts";
+import { PactRegistrationStore } from "../pact-registration-store.ts";
 import {
   listRunLogs,
   parseJson,
@@ -66,6 +68,8 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
   readonly idempotencyStore: IIdempotencyStore;
   readonly marketplaceStore: IMarketplaceStore;
   readonly approvalStore: ApprovalStore;
+  readonly pactIdentityStore: PactIdentityStore;
+  readonly pactRegistrationStore: PactRegistrationStore;
 
   private readonly pool: Pool;
   private readonly secretCodec: ISecretCodec;
@@ -96,6 +100,8 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
     this.triggerStore = new SqlTriggerStore(transaction, this.secretCodec);
     this.saasProjectStore = new SaasProjectStore(transaction, this.secretCodec);
     this.approvalStore = new ApprovalStore(transaction, this.secretCodec);
+    this.pactIdentityStore = new PactIdentityStore(transaction, this.secretCodec);
+    this.pactRegistrationStore = new PactRegistrationStore(transaction);
     this.oauthClientConfigStore = new PostgresOAuthClientConfigStore(pool, this.secretCodec);
     this.oauthStateStore = new PostgresOAuthStateStore(pool, this.secretCodec);
     this.runtimeTokenStore = new PostgresRuntimeTokenStore(pool);
@@ -418,7 +424,7 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
         insert into runtime_tokens (
           ${runtimeTokenColumns}
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       `,
       [
         record.id,
@@ -433,6 +439,7 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(record.approvalRequiredActions ?? []),
         record.createdAt,
         record.lastUsedAt ?? null,
+        record.subject,
       ],
     );
   }
@@ -477,6 +484,20 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(policy.approvalRequiredActions ?? []),
         id,
       ],
+    );
+    const row = result.rows[0];
+    return row ? readRuntimeTokenRow(row) : undefined;
+  }
+
+  async updateSubject(id: string, subject: string): Promise<RuntimeTokenRecord | undefined> {
+    const result = await this.pool.query<RuntimeRow>(
+      `
+        update runtime_tokens
+        set subject = $1
+        where id = $2
+        returning ${runtimeTokenColumns}
+      `,
+      [subject, id],
     );
     const row = result.rows[0];
     return row ? readRuntimeTokenRow(row) : undefined;

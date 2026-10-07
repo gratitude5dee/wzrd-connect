@@ -307,6 +307,42 @@ export interface ApprovalDecisionResult {
   grant?: ApprovalGrant;
 }
 
+export interface PactIdentity {
+  issuer?: string;
+  kid: string;
+  jwksUrl?: string;
+  createdAt: string;
+  rotatedAt?: string;
+  previousKid?: string;
+  subject: "configured";
+}
+
+export interface PactIdentityResponse {
+  identity: PactIdentity | null;
+}
+
+export interface PactRegistration {
+  id: string;
+  providerOrigin: string;
+  audience: string;
+  enabled: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PactRegistrationList {
+  items: PactRegistration[];
+}
+
+export interface PactRegistrationResponse {
+  registration: PactRegistration;
+}
+
+export interface PactRegistrationTokenResponse {
+  token: string;
+}
+
 export interface ExecutionResult {
   ok: boolean;
   output?: unknown;

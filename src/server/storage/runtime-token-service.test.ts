@@ -11,6 +11,7 @@ describe("RuntimeTokenService", () => {
       list: vi.fn(async () => []),
       findByHash: vi.fn(),
       updatePolicy: vi.fn(),
+      updateSubject: vi.fn(),
       revoke: vi.fn(async () => false),
       markUsed: vi.fn(),
     };
@@ -32,12 +33,14 @@ describe("RuntimeTokenService", () => {
       allowedProxies: ["github"],
       allowedConnections: ["example:work"],
       createdAt: "2026-07-20T00:00:00.000Z",
+      subject: "subject-token-1",
     };
     const store: IRuntimeTokenStore = {
       add: vi.fn(),
       list: vi.fn(async () => [record]),
       findByHash: vi.fn(async () => record),
       updatePolicy: vi.fn(),
+      updateSubject: vi.fn(),
       revoke: vi.fn(async () => false),
       markUsed: vi.fn(),
     };
@@ -49,6 +52,7 @@ describe("RuntimeTokenService", () => {
       blockedActions: ["github.delete_repository"],
       allowedProxies: ["github"],
       allowedConnections: ["example:work"],
+      subject: "subject-token-1",
     });
     expect(store.findByHash).toHaveBeenCalledWith(record.tokenHash);
     expect(store.list).not.toHaveBeenCalled();
@@ -66,12 +70,14 @@ describe("RuntimeTokenService", () => {
       allowedProxies: [],
       allowedConnections: [],
       createdAt: "2026-07-20T00:00:00.000Z",
+      subject: "subject-token-1",
     };
     const store: IRuntimeTokenStore = {
       add: vi.fn(),
       list: vi.fn(async () => [record]),
       findByHash: vi.fn(async () => record),
       updatePolicy: vi.fn(),
+      updateSubject: vi.fn(),
       revoke: vi.fn(async () => false),
       markUsed: vi.fn(async () => {
         throw new Error("D1_ERROR: network connection lost");
@@ -86,6 +92,7 @@ describe("RuntimeTokenService", () => {
       blockedActions: [],
       allowedProxies: [],
       allowedConnections: [],
+      subject: "subject-token-1",
     });
     expect(logger.warn).toHaveBeenCalledWith(
       { tokenId: "token-1", err: expect.any(Error) },
@@ -197,6 +204,16 @@ class MemoryRuntimeTokenStore implements IRuntimeTokenStore {
       ...policy,
       allowedConnections: policy.allowedConnections ?? [],
     };
+    this.tokens.set(id, updated);
+    return updated;
+  }
+
+  async updateSubject(id: string, subject: string): Promise<RuntimeTokenRecord | undefined> {
+    const token = this.tokens.get(id);
+    if (!token) {
+      return undefined;
+    }
+    const updated = { ...token, subject };
     this.tokens.set(id, updated);
     return updated;
   }

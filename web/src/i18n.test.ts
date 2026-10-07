@@ -111,6 +111,7 @@ describe("locales", () => {
     "client secret",
     "connector marketplace",
     "discovery url",
+    "jwks url",
     "mcp url",
     "oauth app",
     "oauth apps",

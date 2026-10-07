@@ -254,6 +254,7 @@ describe("Trigger runtime HTTP boundary", () => {
           blockedActions: [],
           allowedProxies: [],
           allowedTriggers: ["github.on_repo_event"],
+          subject: "subject-1",
         },
         request: { operation: "reconcile", config, endpointUrl: callback, active: true, requestKey: "legacy-refresh" },
         signal: new AbortController().signal,

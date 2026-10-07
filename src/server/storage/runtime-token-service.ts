@@ -16,6 +16,8 @@ export interface RuntimeTokenRecord {
   approvalRequiredActions?: string[];
   createdAt: string;
   lastUsedAt?: string;
+  /** Opaque PACT `sub` for PA-JWTs minted for this token's calls. */
+  subject: string;
 }
 
 export interface RuntimeTokenSummary {
@@ -30,6 +32,8 @@ export interface RuntimeTokenSummary {
   approvalRequiredActions?: string[];
   createdAt: string;
   lastUsedAt?: string;
+  /** Opaque PACT `sub` identifying the agent behind this token. */
+  subject: string;
 }
 
 export interface RuntimeTokenCreation {
@@ -42,6 +46,7 @@ export interface IRuntimeTokenStore {
   list(): Promise<RuntimeTokenRecord[]>;
   findByHash(tokenHash: string): Promise<RuntimeTokenRecord | undefined>;
   updatePolicy(id: string, policy: TokenPolicy): Promise<RuntimeTokenRecord | undefined>;
+  updateSubject(id: string, subject: string): Promise<RuntimeTokenRecord | undefined>;
   revoke(id: string): Promise<boolean>;
   markUsed(id: string, usedAt: string): Promise<void>;
 }
@@ -50,6 +55,8 @@ const tokenPrefix = "oct_";
 
 export interface RuntimeGrant extends TokenPolicy {
   tokenId: string;
+  /** PACT `sub` identifying the agent behind this token. */
+  subject: string;
 }
 
 export class RuntimeTokenService {
@@ -84,6 +91,7 @@ export class RuntimeTokenService {
       requireApprovalOperations: policy.requireApprovalOperations,
       approvalRequiredActions: policy.approvalRequiredActions,
       createdAt: now,
+      subject: randomRuntimeTokenSubject(),
     };
     await this.store.add(record);
     return { token, record };
@@ -95,6 +103,11 @@ export class RuntimeTokenService {
 
   async revokeToken(id: string): Promise<boolean> {
     return this.store.revoke(id);
+  }
+
+  async rotateTokenSubject(id: string): Promise<RuntimeTokenSummary | undefined> {
+    const record = await this.store.updateSubject(id, randomRuntimeTokenSubject());
+    return record ? summarizeRuntimeToken(record) : undefined;
   }
 
   async updateTokenPolicy(id: string, policy: TokenPolicy): Promise<RuntimeTokenSummary | undefined> {
@@ -122,6 +135,7 @@ export class RuntimeTokenService {
       allowedTriggers: matched.allowedTriggers ?? [],
       requireApprovalOperations: matched.requireApprovalOperations,
       approvalRequiredActions: matched.approvalRequiredActions,
+      subject: matched.subject,
     };
   }
 
@@ -146,6 +160,11 @@ export function hashRuntimeToken(token: string): string {
   return createHash("sha256").update(token).digest("base64url");
 }
 
+/** Opaque 128-bit base64url `sub` shared by PA-JWTs minted for one runtime token. */
+export function randomRuntimeTokenSubject(): string {
+  return randomBytes(16).toString("base64url");
+}
+
 export function summarizeRuntimeToken(record: RuntimeTokenRecord): RuntimeTokenSummary {
   return {
     id: record.id,
@@ -159,6 +178,7 @@ export function summarizeRuntimeToken(record: RuntimeTokenRecord): RuntimeTokenS
     approvalRequiredActions: record.approvalRequiredActions,
     createdAt: record.createdAt,
     lastUsedAt: record.lastUsedAt,
+    subject: record.subject,
   };
 }
 

@@ -29,6 +29,8 @@ import { ApprovalStore } from "../approval-store.ts";
 import { ConnectionRequestStore } from "../connection-request-store.ts";
 import { SqlConnectionStore } from "../connection-store.ts";
 import { defaultMigrationSource } from "../migration-source.ts";
+import { PactIdentityStore } from "../pact-identity-store.ts";
+import { PactRegistrationStore } from "../pact-registration-store.ts";
 import {
   listRunLogs,
   parseJson,
@@ -99,6 +101,8 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
   readonly idempotencyStore: SqliteIdempotencyStore;
   readonly marketplaceStore: SqliteMarketplaceStore;
   readonly approvalStore: ApprovalStore;
+  readonly pactIdentityStore: PactIdentityStore;
+  readonly pactRegistrationStore: PactRegistrationStore;
 
   private readonly database: DatabaseSync;
   private readonly secretCodec: ISecretCodec;
@@ -116,6 +120,8 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
     this.triggerStore = new SqlTriggerStore(transaction, this.secretCodec);
     this.saasProjectStore = new SaasProjectStore(transaction, this.secretCodec);
     this.approvalStore = new ApprovalStore(transaction, this.secretCodec);
+    this.pactIdentityStore = new PactIdentityStore(transaction, this.secretCodec);
+    this.pactRegistrationStore = new PactRegistrationStore(transaction);
     this.oauthClientConfigStore = new SqliteOAuthClientConfigStore(this.database, this.secretCodec);
     this.oauthStateStore = new SqliteOAuthStateStore(this.database, this.secretCodec);
     this.runtimeTokenStore = new SqliteRuntimeTokenStore(this.database);
@@ -196,6 +202,17 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
             value: await nextSecretCodec.encode(await this.secretCodec.decode(readString(row, "request_ciphertext"))),
           })),
       );
+      const pactIdentities = await Promise.all(
+        this.database
+          .prepare("select id, private_jwk_ciphertext from pact_identity")
+          .all()
+          .map(async (row) => ({
+            id: Number(row.id),
+            value: await nextSecretCodec.encode(
+              await this.secretCodec.decode(readString(row, "private_jwk_ciphertext")),
+            ),
+          })),
+      );
       const marketplaceConfig = await this.marketplaceStore.getConfig();
       const rotatedMarketplaceConfig = marketplaceConfig
         ? {
@@ -226,6 +243,10 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
         this.database
           .prepare("update approvals set request_ciphertext = ? where id = ?")
           .run(approval.value, approval.id);
+      for (const identity of pactIdentities)
+        this.database
+          .prepare("update pact_identity set private_jwk_ciphertext = ? where id = ?")
+          .run(identity.value, identity.id);
       if (rotatedMarketplaceConfig) {
         this.database
           .prepare("update marketplace_config set value = ? where id = 1")
@@ -255,6 +276,8 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
       delete from idempotency_records;
       delete from approval_grants;
       delete from approvals;
+      delete from pact_registrations;
+      delete from pact_identity;
       delete from marketplace_config;
       delete from provider_preferences;
     `),
@@ -402,7 +425,7 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
         insert into runtime_tokens (
           ${runtimeTokenColumns}
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
       .run(
@@ -418,6 +441,7 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(record.approvalRequiredActions ?? []),
         record.createdAt,
         record.lastUsedAt ?? null,
+        record.subject,
       );
   }
 
@@ -465,6 +489,20 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(policy.approvalRequiredActions ?? []),
         id,
       );
+    return row ? readRuntimeTokenRow(row) : undefined;
+  }
+
+  async updateSubject(id: string, subject: string): Promise<RuntimeTokenRecord | undefined> {
+    const row = this.database
+      .prepare(
+        `
+        update runtime_tokens
+        set subject = ?
+        where id = ?
+        returning ${runtimeTokenColumns}
+      `,
+      )
+      .get(subject, id);
     return row ? readRuntimeTokenRow(row) : undefined;
   }
 
