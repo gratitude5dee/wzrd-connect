@@ -205,6 +205,7 @@ describe("loadRuntimeData", () => {
       "/api/runs",
       "/api/marketplace",
       "/api/provider-preferences",
+      "/api/approvals?status=pending",
     ]);
     expect(calls[0]?.headers.get("authorization")).toBe("Bearer local-token");
     for (const call of calls.slice(1)) {

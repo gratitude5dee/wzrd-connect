@@ -14,11 +14,14 @@ import type { TriggerMaintenance } from "../triggers/maintenance.ts";
 import type { TriggerRunner } from "../triggers/trigger-runner.ts";
 import type { LocalAuthOptions } from "./api/auth.ts";
 import type { RuntimeActionHttpResult } from "./api/runtime-api.ts";
+import type { ApprovalGate, ApprovalGateRequest } from "./approvals/approval-gate.ts";
+import type { ApprovalService, CreateGrantInput } from "./approvals/approval-service.ts";
 import type { ITransitFileService } from "./files/transit-file-store.ts";
+import type { ApprovalGrantRecord, ApprovalRecord } from "./storage/approval-store.ts";
 import type { IIdempotencyStore } from "./storage/idempotency-store.ts";
 import type { IRuntimePolicyStore } from "./storage/runtime-policy-store.ts";
 import type { RunLogCaller, RunLogListInput } from "./storage/runtime-store.ts";
-import type { RuntimeGrant, RuntimeTokenService } from "./storage/runtime-token-service.ts";
+import type { RuntimeTokenService } from "./storage/runtime-token-service.ts";
 import type { Context, MiddlewareHandler } from "hono";
 
 import { Hono } from "hono";
@@ -28,6 +31,7 @@ import { ActionPolicyService, emptyPolicyRules } from "../core/action-policy.ts"
 import { DEFAULT_ACTION_SEARCH_LIMIT, createActionSearchIndexProvider, searchActions } from "../core/action-search.ts";
 import {
   optionalBoolean,
+  optionalInteger,
   optionalRecord,
   optionalString,
   requiredRawString,
@@ -49,8 +53,15 @@ import {
   readIdempotencyKey,
 } from "./actions/action-idempotency.ts";
 import { ActionRunner } from "./actions/action-runner.ts";
+import { summarizeForRunLog } from "./actions/run-log-summary.ts";
 import { renderActionMarkdown } from "./api/action-markdown.ts";
-import { clearLocalAuthCookie, createLocalAuthMiddleware, readLocalAuthSession, readRuntimeGrant } from "./api/auth.ts";
+import {
+  clearLocalAuthCookie,
+  createLocalAuthMiddleware,
+  hasAdminBearer,
+  readLocalAuthSession,
+  readRuntimeGrant,
+} from "./api/auth.ts";
 import { getResponseCachePolicy } from "./api/cache-policy.ts";
 import { createConnectionRoutes } from "./api/connection-routes.ts";
 import { HttpRequestError, internalError, jsonError, notFound, readJsonBody } from "./api/http-utils.ts";
@@ -73,6 +84,7 @@ import {
   writeRuntimeSuccess,
 } from "./api/runtime-api.ts";
 import { renderSaasCompletionPage } from "./api/saas-completion-page.ts";
+import { ApprovalRequestError, approvalPollIntervalSeconds } from "./approvals/approval-service.ts";
 import { TransitFileError } from "./files/transit-file-store.ts";
 import { ProxyRunner } from "./proxy/proxy-runner.ts";
 import { decodeRunLogCursor } from "./storage/runtime-store.ts";
@@ -131,6 +143,8 @@ export interface IConnectServerOptions {
   triggerMaintenance?: TriggerMaintenance;
   idempotency: IIdempotencyStore;
   transitFiles: ITransitFileService;
+  /** Approval checkpoint; absent means the approval overlay and routes stay off. */
+  approvals?: ApprovalService;
   uploadTransitFile?: (request: Request) => Promise<TransitFileUpload>;
   auth?: LocalAuthOptions;
   actionPolicy?: ActionPolicyService;
@@ -267,6 +281,9 @@ export class ConnectServer {
       this.listRuntimeAppsByService(context, context.req.param("service")),
     );
     app.post("/v1/proxy/:service", (context) => this.createRuntimeProxyRequest(context, context.req.param("service")));
+    if (this.options.approvals) {
+      app.get("/v1/approvals/:id", (context) => this.pollRuntimeApproval(context, context.req.param("id")));
+    }
 
     app.get("/openapi.json", async (context) => {
       const { createOpenApiDocument } = await import("./api/openapi.ts");
@@ -317,6 +334,16 @@ export class ConnectServer {
     app.delete("/api/runtime-tokens/:id", (context) => this.revokeRuntimeToken(context, context.req.param("id")));
     app.get("/api/runtime-policy", (context) => this.getRuntimePolicy(context));
     app.put("/api/runtime-policy", (context) => this.updateRuntimePolicy(context));
+    if (this.options.approvals) {
+      app.get("/api/approvals", (context) => this.listApprovals(context));
+      app.get("/api/approvals/:id", (context) => this.getApproval(context, context.req.param("id")));
+      app.post("/api/approvals/:id/approve", (context) =>
+        this.decideApproval(context, context.req.param("id"), "approve"),
+      );
+      app.post("/api/approvals/:id/deny", (context) => this.decideApproval(context, context.req.param("id"), "deny"));
+      app.get("/api/approval-grants", (context) => this.listApprovalGrants(context));
+      app.delete("/api/approval-grants/:id", (context) => this.deleteApprovalGrant(context, context.req.param("id")));
+    }
     const saas = this.options.saasProject;
     if (saas) {
       app.get("/api/oauth/managed-project", async (context) =>
@@ -422,7 +449,9 @@ export class ConnectServer {
     app.post("/mcp", (context) => this.handleMcp(context));
     app.get("/mcp", (context) => this.rejectMcpMethod(context));
     app.delete("/mcp", (context) => this.rejectMcpMethod(context));
-    app.get("/mcp/tools", async (context) => context.json({ tools: (await loadMcpModule()).listMcpToolSummaries() }));
+    app.get("/mcp/tools", async (context) =>
+      context.json({ tools: (await loadMcpModule()).listMcpToolSummaries(Boolean(this.options.approvals)) }),
+    );
 
     // Without a console the API owns every unknown path; a console host layers its fallback over these 404s.
     if (this.options.registerStaticRoutes) this.options.registerStaticRoutes(app);
@@ -861,7 +890,7 @@ export class ConnectServer {
           input,
           connectionName,
           policy,
-          runtimeGrant,
+          runtimeGrant?.tokenId,
           context.req.raw.signal,
           connectionId,
         ),
@@ -885,9 +914,10 @@ export class ConnectServer {
           input,
           connectionName,
           policy,
-          runtimeGrant,
+          runtimeGrant?.tokenId,
           context.req.raw.signal,
           connectionId,
+          this.createApprovalGate(context),
         ),
       );
     }
@@ -948,9 +978,10 @@ export class ConnectServer {
       input,
       connectionName,
       policy,
-      runtimeGrant,
+      runtimeGrant?.tokenId,
       context.req.raw.signal,
       connectionId,
+      this.createApprovalGate(context),
     );
     const completed = await this.options.idempotency.complete({
       keyHash,
@@ -971,9 +1002,11 @@ export class ConnectServer {
     input: unknown,
     connectionName: string | undefined,
     policy: ActionPolicySnapshot,
-    runtimeGrant: RuntimeGrant | undefined,
+    runtimeTokenId: string | undefined,
     signal: AbortSignal | undefined,
     connectionId?: string,
+    approvalGate?: ApprovalGate,
+    approvalId?: string,
   ): Promise<RuntimeActionHttpResult> {
     try {
       const run = await this.options.actions.run({
@@ -983,14 +1016,28 @@ export class ConnectServer {
         connectionName,
         connectionId,
         policy,
-        runtimeTokenId: runtimeGrant?.tokenId,
+        runtimeTokenId,
         signal,
+        approvalGate,
+        bypassApproval: approvalId !== undefined,
+        approvalId,
       });
       if (!run) {
         return serializeRuntimeFailure(unknownActionFailure(actionId));
       }
 
-      return serializeRuntimeActionResult({
+      if (run.approval?.interception) {
+        const record = run.approval.interception.approval;
+        return serializeRuntimeFailure({
+          status: 202,
+          errorCode: "approval_required",
+          message: "Action requires approval before execution.",
+          data: this.approvalRequiredData(record),
+          meta: { actionId, executionId: run.executionId, approvalId: record.id },
+        });
+      }
+
+      const httpResult = serializeRuntimeActionResult({
         actionId,
         executionId: run.executionId,
         remoteExecutionId: run.remoteExecutionId,
@@ -999,6 +1046,10 @@ export class ConnectServer {
         auditPersisted: run.auditPersisted,
         result: run.result,
       });
+      if (approvalId) {
+        httpResult.body.meta = { ...httpResult.body.meta, approvalId };
+      }
+      return httpResult;
     } catch (error) {
       if (error instanceof ConnectionError) {
         return serializeRuntimeFailure({
@@ -1048,6 +1099,7 @@ export class ConnectServer {
       connectionId: optionalString(context.req.header("x-oo-connector-app-id")),
       policy,
       signal: context.req.raw.signal,
+      approvalGate: this.createApprovalGate(context),
     });
     if (result.ok) {
       return writeRuntimeSuccess(context, result.response, result.meta);
@@ -1057,9 +1109,455 @@ export class ConnectServer {
       status: result.status,
       errorCode: result.errorCode,
       message: result.message,
-      data: result.data,
-      meta: result.meta,
+      data: result.approval ? this.approvalRequiredData(result.approval.interception.approval) : result.data,
+      meta: result.approval ? { ...result.meta, approvalId: result.approval.interception.approval.id } : result.meta,
     });
+  }
+
+  /**
+   * Per-request approval gate handed to the runners: binds this caller's
+   * runtime token (grant consumption stays per-token) and owner key (approval
+   * records stay creator-scoped), and fingerprints the request for pending
+   * dedupe. The stored preview runs through `summarizeForRunLog`, the stored
+   * payload through the secret codec.
+   */
+  private createApprovalGate(context: Context): ApprovalGate | undefined {
+    const service = this.options.approvals;
+    if (!service) {
+      return undefined;
+    }
+    const grant = readRuntimeGrant(context);
+    return {
+      lookup: service.createGrantLookup(grant?.tokenId),
+      requireApproval: async (request: ApprovalGateRequest) => {
+        const requestFingerprint = hashApprovalRequestFingerprint(request, grant?.tokenId);
+        const result = await service.requireApproval({
+          kind: request.kind,
+          ownerKey: service.readOwnerKey(context),
+          runtimeTokenId: grant?.tokenId,
+          actionId: request.actionId,
+          service: request.service,
+          connectionId: request.request.connectionId,
+          connectionName: request.request.connectionName,
+          operationType: request.operationType,
+          caller: request.caller,
+          request: request.request,
+          requestFingerprint,
+          preview: summarizeForRunLog(request.request.input),
+        });
+        return { approval: result.approval, created: result.created };
+      },
+    };
+  }
+
+  /** `/v1` data block for `approval_required` and the pending poll payload. */
+  private approvalRequiredData(record: ApprovalRecord): Record<string, unknown> {
+    return {
+      approvalId: record.id,
+      pollUrl: `/v1/approvals/${record.id}`,
+      approvalUrl: `${this.options.publicOrigin}/approvals/${record.id}`,
+      operationType: record.operationType,
+      expiresAt: record.expiresAt,
+      preview: record.preview,
+    };
+  }
+
+  /**
+   * `GET /v1/approvals/:id` — the creator's poll. Execution runs here on the
+   * first poll after approval, never on the approve call; the stored request
+   * is re-evaluated against the caller's then-current policy. Completed
+   * executions replay through the idempotency store keyed `approval:<id>`.
+   */
+  private async pollRuntimeApproval(context: Context, approvalId: string): Promise<Response> {
+    const service = this.options.approvals!;
+    const ownerKey = service.readOwnerKey(context);
+    const outcome = await service.poll(approvalId, ownerKey);
+    if (outcome.kind === "not_found") {
+      return writeRuntimeFailure(context, {
+        status: 404,
+        errorCode: "approval_not_found",
+        message: `Approval not found: ${approvalId}.`,
+      });
+    }
+    if (outcome.kind === "rate_limited") {
+      context.header("Retry-After", String(approvalPollIntervalSeconds));
+      return writeRuntimeFailure(context, {
+        status: 429,
+        errorCode: "rate_limited",
+        message: "Approval was polled faster than the Retry-After interval.",
+        meta: { approvalId },
+      });
+    }
+    if (outcome.kind === "pending" || outcome.kind === "in_flight") {
+      context.header("Retry-After", String(approvalPollIntervalSeconds));
+      return writeRuntimeFailure(context, {
+        status: 202,
+        errorCode: "approval_required",
+        message: outcome.kind === "in_flight" ? "Approval is executing." : "Approval is still pending.",
+        data: {
+          ...this.approvalRequiredData(outcome.approval),
+          status: outcome.kind === "in_flight" ? "executing" : "pending",
+        },
+      });
+    }
+    const record = outcome.approval;
+    if (outcome.kind === "terminal") {
+      if (record.status === "denied") {
+        return writeRuntimeFailure(context, {
+          status: 403,
+          errorCode: "approval_denied",
+          message: "Approval was denied.",
+          meta: { approvalId, decidedAt: record.decidedAt },
+        });
+      }
+      if (record.status === "expired") {
+        return writeRuntimeFailure(context, {
+          status: 410,
+          errorCode: "approval_expired",
+          message: "Approval expired before it was decided.",
+          meta: { approvalId, expiresAt: record.expiresAt },
+        });
+      }
+      // executed | failed: replay the stored response.
+      const replay = await this.claimApprovalReplay(record);
+      if (replay) {
+        return writeRuntimeActionHttpResult(context, replay);
+      }
+      return writeRuntimeFailure(context, {
+        status: 500,
+        errorCode: "internal_error",
+        message: "Approval execution result is no longer stored.",
+        meta: { approvalId },
+      });
+    }
+
+    // approved: this poll claims and runs the stored request once.
+    const claimed = await service.beginExecution(record.id);
+    if (!claimed) {
+      context.header("Retry-After", String(approvalPollIntervalSeconds));
+      return writeRuntimeFailure(context, {
+        status: 202,
+        errorCode: "approval_required",
+        message: "Approval is executing.",
+        data: { ...this.approvalRequiredData(record), status: "executing" },
+      });
+    }
+    const result = await this.executeApprovedApproval(context, claimed);
+    return writeRuntimeActionHttpResult(context, result);
+  }
+
+  /**
+   * Replay path for `executed`/`failed` records: the response was stored under
+   * `approval:<id>` when the run completed. A claim hit returns the stored
+   * envelope unchanged.
+   */
+  private async claimApprovalReplay(record: ApprovalRecord): Promise<RuntimeActionHttpResult | undefined> {
+    const claim = await this.options.idempotency.claim({
+      keyHash: hashIdempotencyKey(`approval:${record.id}`),
+      requestHash: record.requestFingerprint,
+      claimId: crypto.randomUUID(),
+      now: new Date().toISOString(),
+      expiresAt: createIdempotencyExpiry(new Date()),
+    });
+    if (claim.kind === "completed") {
+      return claim.response;
+    }
+    return undefined;
+  }
+
+  /**
+   * MCP `get_approval`: the same poll semantics as `GET /v1/approvals/:id`
+   * (creator-scoped, execute-on-first-poll) projected onto tool payloads
+   * instead of HTTP envelopes.
+   */
+  private async pollApprovalForTool(
+    context: Context,
+    query: { approvalId?: string; connectionRequestId?: string },
+  ): Promise<Record<string, unknown>> {
+    const service = this.options.approvals!;
+    const ownerKey = service.readOwnerKey(context);
+    let record: ApprovalRecord | undefined;
+    if (query.approvalId) {
+      record = await service.get(query.approvalId);
+    } else if (query.connectionRequestId) {
+      record = await service.getForConnectionRequest(query.connectionRequestId, ownerKey);
+    }
+    if (!record || record.ownerKey !== ownerKey) {
+      return { ok: false, error: { code: "approval_not_found", message: "Approval not found." } };
+    }
+    const outcome = await service.poll(record.id, ownerKey);
+    const approvalUrl = `${this.options.publicOrigin}/approvals/${record.id}`;
+    switch (outcome.kind) {
+      case "not_found":
+        return { ok: false, error: { code: "approval_not_found", message: "Approval not found." } };
+      case "rate_limited":
+        return {
+          ok: false,
+          error: { code: "rate_limited", message: "Approval was polled faster than the Retry-After interval." },
+        };
+      case "pending":
+        return {
+          ok: true,
+          data: {
+            status: "pending",
+            approvalId: record.id,
+            approvalUrl,
+            expiresAt: outcome.approval.expiresAt,
+          },
+        };
+      case "in_flight":
+        return { ok: true, data: { status: "executing", approvalId: record.id, approvalUrl } };
+      case "terminal": {
+        if (outcome.approval.status === "denied") {
+          return { ok: false, error: { code: "approval_denied", message: "Approval was denied." } };
+        }
+        if (outcome.approval.status === "expired") {
+          return { ok: false, error: { code: "approval_expired", message: "Approval expired before it was decided." } };
+        }
+        const replay = await this.claimApprovalReplay(outcome.approval);
+        if (!replay) {
+          return {
+            ok: false,
+            error: { code: "internal_error", message: "Approval execution result is no longer stored." },
+          };
+        }
+        return approvalResultToolPayload(replay);
+      }
+      case "approved": {
+        const claimed = await service.beginExecution(record.id);
+        if (!claimed) {
+          return { ok: true, data: { status: "executing", approvalId: record.id, approvalUrl } };
+        }
+        return approvalResultToolPayload(await this.executeApprovedApproval(context, claimed));
+      }
+    }
+  }
+
+  /**
+   * Runs the stored request under the caller's now-current policy, persists the
+   * response for replay, and settles the record to `executed`/`failed`.
+   */
+  private async executeApprovedApproval(context: Context, record: ApprovalRecord): Promise<RuntimeActionHttpResult> {
+    const service = this.options.approvals!;
+    const claimId = crypto.randomUUID();
+    const keyHash = hashIdempotencyKey(`approval:${record.id}`);
+    const finish = async (
+      status: "executed" | "failed",
+      executionId: string | undefined,
+      result: RuntimeActionHttpResult,
+    ) => {
+      const completed = await this.options.idempotency.complete({
+        keyHash,
+        requestHash: record.requestFingerprint,
+        claimId,
+        response: result,
+        expiresAt: createIdempotencyExpiry(new Date()),
+      });
+      if (!completed) {
+        this.options.logger?.warn({ approvalId: record.id }, "approval idempotency completion lost");
+      }
+      await service.finishExecution(record.id, status, executionId);
+      return result;
+    };
+
+    // The idempotency claim serializes concurrent execute attempts.
+    const claim = await this.options.idempotency.claim({
+      keyHash,
+      requestHash: record.requestFingerprint,
+      claimId,
+      now: new Date().toISOString(),
+      expiresAt: createIdempotencyExpiry(new Date()),
+    });
+    if (claim.kind === "completed") {
+      await service.finishExecution(record.id, "executed", record.executionId);
+      return claim.response;
+    }
+    if (claim.kind !== "acquired") {
+      await service.releaseExecution(record.id);
+      return serializeRuntimeFailure({
+        status: 202,
+        errorCode: "approval_required",
+        message: "Approval is executing.",
+        data: { ...this.approvalRequiredData(record), status: "executing" },
+      });
+    }
+
+    const stored = await service.readStoredRequest(record.id);
+    if (!stored) {
+      return await finish(
+        "failed",
+        undefined,
+        serializeRuntimeFailure({
+          status: 500,
+          errorCode: "internal_error",
+          message: "Approval request payload is no longer stored.",
+          meta: { approvalId: record.id },
+        }),
+      );
+    }
+
+    let policy: ActionPolicySnapshot;
+    try {
+      policy = await this.getPolicySnapshot(context);
+    } catch {
+      return await finish(
+        "failed",
+        undefined,
+        serializeRuntimeFailure({
+          status: 500,
+          errorCode: "internal_error",
+          message: "Runtime policy is unavailable.",
+          meta: { approvalId: record.id },
+        }),
+      );
+    }
+
+    try {
+      if (record.kind === "proxy") {
+        const result = await this.proxyRunner.run({
+          service: record.service,
+          input: stored.input,
+          connectionName: stored.connectionName,
+          connectionId: stored.connectionId,
+          policy,
+          signal: context.req.raw.signal,
+          bypassApproval: true,
+        });
+        const httpResult: RuntimeActionHttpResult = result.ok
+          ? {
+              status: 200,
+              body: {
+                success: true,
+                message: "OK",
+                data: result.response,
+                meta: { ...(result.meta ?? {}), approvalId: record.id },
+              },
+            }
+          : {
+              status: result.status,
+              body: {
+                success: false,
+                message: result.message,
+                data: result.data ?? null,
+                errorCode: result.errorCode,
+                meta: { ...(result.meta ?? {}), approvalId: record.id },
+              },
+            };
+        return await finish(result.ok ? "executed" : "failed", optionalString(result.meta?.executionId), httpResult);
+      }
+      const result = await this.executeRuntimeAction(
+        record.actionId,
+        stored.input,
+        stored.connectionName,
+        policy,
+        record.runtimeTokenId,
+        context.req.raw.signal,
+        stored.connectionId,
+        this.createApprovalGate(context),
+        record.id,
+      );
+      return await finish(
+        result.status === 200 ? "executed" : "failed",
+        optionalString(result.body.meta.executionId),
+        result,
+      );
+    } catch (error) {
+      this.options.logger?.warn({ approvalId: record.id, err: error }, "approval execution failed");
+      return await finish(
+        "failed",
+        undefined,
+        serializeRuntimeFailure({
+          status: 500,
+          errorCode: "internal_error",
+          message: "Approval execution failed unexpectedly.",
+          meta: { approvalId: record.id },
+        }),
+      );
+    }
+  }
+
+  private async listApprovals(context: Context): Promise<Response> {
+    const service = this.options.approvals!;
+    const page = await service.list({
+      status: context.req.query("status"),
+      cursor: context.req.query("cursor") || undefined,
+    });
+    return context.json({
+      items: page.items.map((record) => serializeAdminApproval(record)),
+      nextCursor: page.nextCursor,
+    });
+  }
+
+  private async getApproval(context: Context, id: string): Promise<Response> {
+    const record = await this.options.approvals!.get(id);
+    if (!record) {
+      return jsonError(context, 404, "approval_not_found", `Approval not found: ${id}.`);
+    }
+    return context.json(serializeAdminApproval(record));
+  }
+
+  private async decideApproval(context: Context, id: string, decision: "approve" | "deny"): Promise<Response> {
+    const service = this.options.approvals!;
+    let body: Record<string, unknown>;
+    try {
+      body = await readJsonBody(context, 16_384);
+    } catch (error) {
+      if (error instanceof HttpRequestError) {
+        return jsonError(context, error.status, error.code, error.message);
+      }
+      throw error;
+    }
+    const grantInput = decision === "approve" ? readCreateGrantInput(body.grant) : undefined;
+    if (typeof grantInput === "string") {
+      return jsonError(context, 400, "invalid_input", grantInput);
+    }
+    try {
+      const outcome = await service.decide(
+        id,
+        decision,
+        {
+          decidedBy: hasAdminBearer(context) ? "admin" : "admin_session",
+          decisionFactor: hasAdminBearer(context) ? "admin" : "admin_session",
+          decisionReason: optionalString(body.reason),
+        },
+        grantInput,
+      );
+      if (outcome.kind === "not_found") {
+        return jsonError(context, 404, "approval_not_found", `Approval not found: ${id}.`);
+      }
+      if (outcome.kind === "conflict") {
+        return context.json(
+          {
+            error: "approval_decided",
+            message: "Approval was already decided.",
+            approval: serializeAdminApproval(outcome.approval),
+          },
+          409,
+        );
+      }
+      return context.json({
+        approval: serializeAdminApproval(outcome.approval),
+        grant: outcome.kind === "approved" ? outcome.grant : undefined,
+      });
+    } catch (error) {
+      if (error instanceof ApprovalRequestError) {
+        return jsonError(context, 400, "invalid_input", error.message);
+      }
+      throw error;
+    }
+  }
+
+  private async listApprovalGrants(context: Context): Promise<Response> {
+    const grants = await this.options.approvals!.listGrants();
+    return context.json({ items: grants.map(serializeApprovalGrant) });
+  }
+
+  private async deleteApprovalGrant(context: Context, id: string): Promise<Response> {
+    const deleted = await this.options.approvals!.deleteGrant(id);
+    if (!deleted) {
+      return jsonError(context, 404, "grant_not_found", `Approval grant not found: ${id}.`);
+    }
+    return context.json({ ok: true });
   }
 
   private async listRuntimeApps(context: Context): Promise<Response> {
@@ -1155,6 +1653,9 @@ export class ConnectServer {
       actionSearch: this.actionSearch,
       getPolicySnapshot: () => this.getPolicySnapshot(context),
       runtimeGrant: readRuntimeGrant(context),
+      publicOrigin: this.options.publicOrigin,
+      approvalGate: this.createApprovalGate(context),
+      pollApproval: this.options.approvals ? (query) => this.pollApprovalForTool(context, query) : undefined,
       signal: context.req.raw.signal,
     });
   }
@@ -1764,5 +2265,115 @@ function readSearchQuery(context: Context, defaultLimit = DEFAULT_ACTION_SEARCH_
     q,
     service: optionalString(context.req.query("service")),
     limit,
+  };
+}
+
+/**
+ * Pending-dedupe fingerprint for an approval request. Uses the idempotency
+ * request hash when the input fits the depth limit; deep inputs fall back to a
+ * raw serialized fingerprint so dedupe still works for oversized previews.
+ */
+function hashApprovalRequestFingerprint(request: ApprovalGateRequest, runtimeTokenId: string | undefined): string {
+  try {
+    return hashActionRequest({
+      actionId: request.actionId,
+      connectionName: request.request.connectionName ?? defaultConnectionName,
+      connectionId: request.request.connectionId,
+      input: request.request.input,
+      runtimeTokenId,
+    });
+  } catch (error) {
+    if (!(error instanceof ActionInputDepthError)) {
+      throw error;
+    }
+    return hashIdempotencyKey(
+      JSON.stringify({
+        actionId: request.actionId,
+        connectionName: request.request.connectionName,
+        connectionId: request.request.connectionId,
+        input: request.request.input,
+        runtimeTokenId,
+      }),
+    );
+  }
+}
+
+/** Maps a stored/fresh execution envelope onto an MCP tool payload. */
+function approvalResultToolPayload(result: RuntimeActionHttpResult): Record<string, unknown> {
+  const body = result.body;
+  if (body.success) {
+    return { ok: true, data: { status: "executed", result: body.data, meta: body.meta } };
+  }
+  return {
+    ok: false,
+    error: { code: body.errorCode ?? "execution_failed", message: body.message },
+    data: { status: "failed", result: body.data, meta: body.meta },
+  };
+}
+
+/** Validates the optional `{grant}` object on POST /api/approvals/:id/approve. */
+function readCreateGrantInput(value: unknown): CreateGrantInput | string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const record = optionalRecord(value);
+  if (!record) {
+    return "grant must be an object.";
+  }
+  const ttlMinutes = optionalInteger(record.ttlMinutes);
+  if (record.ttlMinutes !== undefined && ttlMinutes === undefined) {
+    return "grant.ttlMinutes must be an integer.";
+  }
+  const maxUses = optionalInteger(record.maxUses);
+  if (record.maxUses !== undefined && maxUses === undefined) {
+    return "grant.maxUses must be an integer.";
+  }
+  const allowDestructive = optionalBoolean(record.allowDestructive);
+  if (record.allowDestructive !== undefined && allowDestructive === undefined) {
+    return "grant.allowDestructive must be a boolean.";
+  }
+  return { ttlMinutes, maxUses, allowDestructive };
+}
+
+/** Admin-facing approval serialization: no owner key, no ciphertext. */
+function serializeAdminApproval(record: ApprovalRecord): Record<string, unknown> {
+  return {
+    id: record.id,
+    kind: record.kind,
+    actionId: record.actionId,
+    service: record.service,
+    connectionId: record.connectionId,
+    connectionName: record.connectionName,
+    connectionRequestId: record.connectionRequestId,
+    operationType: record.operationType,
+    caller: record.caller,
+    runtimeTokenId: record.runtimeTokenId,
+    preview: record.preview,
+    status: record.status,
+    decidedBy: record.decidedBy,
+    decidedAt: record.decidedAt,
+    decisionFactor: record.decisionFactor,
+    decisionReason: record.decisionReason,
+    grantId: record.grantId,
+    executionId: record.executionId,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    expiresAt: record.expiresAt,
+  };
+}
+
+function serializeApprovalGrant(grant: ApprovalGrantRecord): Record<string, unknown> {
+  return {
+    id: grant.id,
+    approvalId: grant.approvalId,
+    runtimeTokenId: grant.runtimeTokenId,
+    actionId: grant.actionId,
+    connectionId: grant.connectionId,
+    operationType: grant.operationType,
+    expiresAt: grant.expiresAt,
+    maxUses: grant.maxUses,
+    uses: grant.uses,
+    createdBy: grant.createdBy,
+    createdAt: grant.createdAt,
   };
 }

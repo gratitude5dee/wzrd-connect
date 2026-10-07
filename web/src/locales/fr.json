@@ -40,7 +40,8 @@
     "actions": "Actions",
     "runs": "Exécutions",
     "access": "API Key",
-    "docs": "Connecter des clients"
+    "docs": "Connecter des clients",
+    "approvals": "Approbations"
   },
   "shell": {
     "invalidUnlockToken": "Saisissez un token administrateur valide pour déverrouiller la console.",
@@ -79,6 +80,9 @@
       },
       "resources": {
         "title": "Connecter des clients"
+      },
+      "approvals": {
+        "title": "Approbations"
       }
     },
     "settings": "Paramètres",
@@ -861,5 +865,63 @@
       "auth_error": "Clé du projet invalide"
     },
     "retry": "Vérifier à nouveau"
+  },
+  "approvals": {
+    "title": "Boîte d'approbation",
+    "description": "Les actions et appels proxy mis en pause en attendant une décision humaine avant tout appel au fournisseur.",
+    "loadFailed": "Impossible de charger les approbations.",
+    "inboxEmpty": "Aucune approbation en attente",
+    "inboxEmptyHint": "Les requêtes bloquées par la politique d'approbation apparaissent ici.",
+    "historyEmpty": "Aucun historique d'approbation",
+    "historyEmptyHint": "Les approbations tranchées se retrouvent ici.",
+    "grantsEmpty": "Aucune autorisation active",
+    "grantsEmptyHint": "Approuver avec une autorisation permet aux requêtes identiques d'éviter l'approbation pendant sa durée de vie.",
+    "tabs": {
+      "inbox": "Boîte de réception",
+      "history": "Historique",
+      "grants": "Autorisations"
+    },
+    "columns": {
+      "action": "Action",
+      "operation": "Opération",
+      "connection": "Connexion",
+      "caller": "Appelant",
+      "preview": "Aperçu",
+      "created": "Créée",
+      "expires": "Expire",
+      "decision": "Décision",
+      "status": "Statut"
+    },
+    "status": {
+      "pending": "En attente",
+      "approved": "Approuvée",
+      "denied": "Refusée",
+      "expired": "Expirée",
+      "executing": "Exécution",
+      "executed": "Exécutée",
+      "failed": "Échouée"
+    },
+    "proxyKind": "Proxy",
+    "approve": "Approuver",
+    "deny": "Refuser",
+    "approveTitle": "Approuver la requête",
+    "approveDescription": "La requête stockée s'exécute au prochain sondage de l'approbation de {{action}} par l'appelant.",
+    "approveFailed": "Impossible d'approuver la requête.",
+    "denyTitle": "Refuser la requête",
+    "denyDescription": "Le prochain sondage de l'approbation de {{action}} par l'appelant renvoie approval_denied.",
+    "denyFailed": "Impossible de refuser la requête.",
+    "denyReason": "Raison (facultatif)",
+    "decisionReason": "Raison de la décision",
+    "grant": "Autorisation",
+    "grantToggle": "Autoriser aussi les futures requêtes identiques",
+    "grantUnavailable": "Cette requête n'a pas de jeton d'exécution : aucune autorisation durable ne peut être créée.",
+    "grantTtl": "Durée de vie de l'autorisation (minutes)",
+    "grantMaxUses": "Nombre maximal d'utilisations (0 = illimité)",
+    "grantAllowDestructive": "Autoriser les opérations destructrices",
+    "grants": {
+      "uses": "Utilisations",
+      "revoke": "Révoquer"
+    },
+    "revokeFailed": "Impossible de révoquer l'autorisation."
   }
 }

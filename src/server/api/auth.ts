@@ -309,9 +309,10 @@ function readBearerToken(context: Context): string | undefined {
  * Bearer credential exactly as sent, so configured tokens still require a byte-for-byte match.
  *
  * Authentication schemes are case-insensitive (RFC 9110), so `bearer` and `BEARER` are accepted;
- * only the credentials stay case-sensitive.
+ * only the credentials stay case-sensitive. Exported for approval ownership hashing: callers
+ * without a runtime token are identified by SHA-256 of this credential, never the credential.
  */
-function readBearerCredential(context: Context): string {
+export function readBearerCredential(context: Context): string {
   const authorization = context.req.header("authorization") ?? "";
   const separator = authorization.indexOf(" ");
   if (separator < 0 || authorization.slice(0, separator).toLowerCase() !== bearerScheme) {

@@ -9,7 +9,7 @@ import type { Context } from "hono";
 import { optionalInteger, optionalString, optionalRecord, requiredRecord } from "../../core/cast.ts";
 import { describeProviderAuth } from "../../core/provider-setup.ts";
 
-export type RuntimeStatus = 400 | 401 | 402 | 403 | 404 | 409 | 413 | 429 | 500 | 501 | 502 | 503 | 504;
+export type RuntimeStatus = 202 | 400 | 401 | 402 | 403 | 404 | 409 | 410 | 413 | 429 | 500 | 501 | 502 | 503 | 504;
 
 export type RuntimeResponseMeta = Record<string, unknown>;
 
@@ -333,12 +333,14 @@ function mapExecutionErrorStatus(code: string | undefined, details?: unknown): R
 
 function isRuntimeStatus(value: unknown): value is RuntimeStatus {
   return (
+    value === 202 ||
     value === 400 ||
     value === 401 ||
     value === 402 ||
     value === 403 ||
     value === 404 ||
     value === 409 ||
+    value === 410 ||
     value === 413 ||
     value === 429 ||
     value === 502 ||

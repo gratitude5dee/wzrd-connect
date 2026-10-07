@@ -40,7 +40,8 @@
     "actions": "操作",
     "runs": "运行记录",
     "access": "API Key",
-    "docs": "接入指南"
+    "docs": "接入指南",
+    "approvals": "审批"
   },
   "shell": {
     "invalidUnlockToken": "请输入有效的管理员 token 来解锁控制台。",
@@ -79,6 +80,9 @@
       },
       "resources": {
         "title": "接入指南"
+      },
+      "approvals": {
+        "title": "审批"
       }
     },
     "settings": "设置",
@@ -861,5 +865,63 @@
       "auth_error": "项目密钥无效"
     },
     "retry": "重新检查"
+  },
+  "approvals": {
+    "title": "审批收件箱",
+    "description": "在向提供商发起请求之前被暂停、等待人工决定的操作与代理调用。",
+    "loadFailed": "无法加载审批。",
+    "inboxEmpty": "没有待处理的审批",
+    "inboxEmptyHint": "被审批策略拦截的请求会显示在这里。",
+    "historyEmpty": "没有审批历史",
+    "historyEmptyHint": "已决定的审批会进入这里。",
+    "grantsEmpty": "没有生效中的授权",
+    "grantsEmptyHint": "带授权批准可以让相同的请求在有效期内跳过审批。",
+    "tabs": {
+      "inbox": "收件箱",
+      "history": "历史",
+      "grants": "授权"
+    },
+    "columns": {
+      "action": "操作",
+      "operation": "操作类型",
+      "connection": "连接",
+      "caller": "调用方",
+      "preview": "预览",
+      "created": "创建时间",
+      "expires": "过期时间",
+      "decision": "决定",
+      "status": "状态"
+    },
+    "status": {
+      "pending": "待处理",
+      "approved": "已批准",
+      "denied": "已拒绝",
+      "expired": "已过期",
+      "executing": "执行中",
+      "executed": "已执行",
+      "failed": "失败"
+    },
+    "proxyKind": "代理",
+    "approve": "批准",
+    "deny": "拒绝",
+    "approveTitle": "批准请求",
+    "approveDescription": "调用方下次轮询 {{action}} 的审批时将执行已保存的请求。",
+    "approveFailed": "无法批准该请求。",
+    "denyTitle": "拒绝请求",
+    "denyDescription": "调用方下次轮询 {{action}} 的审批时将返回 approval_denied。",
+    "denyFailed": "无法拒绝该请求。",
+    "denyReason": "原因（可选）",
+    "decisionReason": "决定原因",
+    "grant": "授权",
+    "grantToggle": "同时授权未来的相同请求",
+    "grantUnavailable": "此请求没有运行时令牌，无法创建持久授权。",
+    "grantTtl": "授权有效期（分钟）",
+    "grantMaxUses": "授权最大使用次数（0 = 不限）",
+    "grantAllowDestructive": "允许破坏性操作",
+    "grants": {
+      "uses": "使用次数",
+      "revoke": "撤销"
+    },
+    "revokeFailed": "无法撤销授权。"
   }
 }

@@ -23,6 +23,8 @@ import { SaasProjectService } from "../saas/saas-project-service.ts";
 import { TriggerMaintenance } from "../triggers/maintenance.ts";
 import { TriggerRunner } from "../triggers/trigger-runner.ts";
 import { ActionRunner } from "./actions/action-runner.ts";
+import { ApprovalMaintenance } from "./approvals/approval-maintenance.ts";
+import { ApprovalService } from "./approvals/approval-service.ts";
 import { ConnectServer } from "./connect-server.ts";
 import { RuntimeTokenService } from "./storage/runtime-token-service.ts";
 
@@ -41,6 +43,8 @@ export interface ConnectAppOptions {
   allowedCustomOAuth?: string[];
   verifyRuntimeJwt?: RuntimeJwtVerifier;
   actionPolicy?: ActionPolicyService;
+  /** Pending-approval TTL override; falls back to the service default. */
+  approvalTtlSeconds?: number;
   registerStaticRoutes?: (app: Hono) => void;
   logger?: RuntimeLogger;
   computeRuntimeAuthConfigured?: boolean;
@@ -55,6 +59,7 @@ export interface ConnectAppOptions {
 export interface ConnectApp {
   saasCleanup: SaasCleanupService;
   triggerMaintenance: TriggerMaintenance;
+  approvalMaintenance: ApprovalMaintenance;
   app: Hono;
   runtimeAuthConfigured: boolean;
 }
@@ -127,8 +132,14 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     deploymentPolicy: options.actionPolicy ?? new ExecutionPolicyService(),
     logger: options.logger,
   });
+  const approvals = new ApprovalService({
+    store: options.runtimeDatabase.approvalStore,
+    ttlSeconds: options.approvalTtlSeconds,
+    logger: options.logger,
+  });
   return {
     triggerMaintenance,
+    approvalMaintenance: new ApprovalMaintenance({ service: approvals, logger: options.logger }),
     saasCleanup: new SaasCleanupService({
       store: options.runtimeDatabase.saasProjectStore,
       requests: options.runtimeDatabase.connectionRequestStore,
@@ -155,6 +166,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
       actions,
       triggers,
       triggerMaintenance,
+      approvals,
       idempotency: options.runtimeDatabase.idempotencyStore,
       transitFiles: options.transitFiles,
       uploadTransitFile: options.uploadTransitFile,

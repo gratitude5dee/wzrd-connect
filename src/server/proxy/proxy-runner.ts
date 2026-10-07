@@ -1,12 +1,14 @@
 import type { CatalogStore } from "../../catalog-store.ts";
 import type { ConnectionService } from "../../connection-service.ts";
-import type { ActionPolicySnapshot } from "../../core/action-policy.ts";
+import type { ActionPolicySnapshot, ApprovalCheck } from "../../core/action-policy.ts";
 import type { ProviderHttpDispatchOptions } from "../../core/provider-http-dispatch.ts";
 import type { RuntimeLogger, ProxyRequestInput, ProxyResponse } from "../../core/types.ts";
 import type { IProviderLoader } from "../../providers/provider-loader.ts";
 import type { SaasExecutionService } from "../../saas/saas-execution-service.ts";
+import type { ApprovalGate, ApprovalInterception } from "../approvals/approval-gate.ts";
 
 import { ConnectionError } from "../../connection-service.ts";
+import { proxyOperationType } from "../../core/action-policy.ts";
 import { optionalInteger, optionalRecord, requiredRecord, requiredString } from "../../core/cast.ts";
 import { withProviderHttpDispatch } from "../../core/provider-http-dispatch.ts";
 import {
@@ -17,7 +19,7 @@ import {
 import { SaasError } from "../../saas/saas-client.ts";
 import { mapConnectionErrorStatus } from "../api/runtime-api.ts";
 
-export type ProxyFailureStatus = 400 | 402 | 403 | 404 | 409 | 413 | 429 | 500 | 501 | 502 | 503 | 504;
+export type ProxyFailureStatus = 202 | 400 | 402 | 403 | 404 | 409 | 413 | 429 | 500 | 501 | 502 | 503 | 504;
 
 export interface ProxyRunnerOptions {
   providerHttpDispatch?: ProviderHttpDispatchOptions;
@@ -36,6 +38,10 @@ export interface RunProxyInput {
   policy: ActionPolicySnapshot;
   /** Cancellation signal from the HTTP request, handed to the provider proxy executor. */
   signal?: AbortSignal;
+  /** Per-request approval gate; absent means the approval overlay never runs. */
+  approvalGate?: ApprovalGate;
+  /** Set on execute-on-poll calls: the stored approval already answered the overlay. */
+  bypassApproval?: boolean;
 }
 
 export type ProxyRunResult =
@@ -53,6 +59,11 @@ export interface ProxyRunFailure {
   message: string;
   data?: unknown;
   meta?: Record<string, unknown>;
+  /** Present on `approval_required` failures: the recorded pending approval. */
+  approval?: {
+    check: ApprovalCheck;
+    interception: ApprovalInterception;
+  };
 }
 
 type ProxyRequestReadResult = { ok: true; input: ProxyRequestInput } | ProxyRunFailure;
@@ -128,6 +139,41 @@ export class ProxyRunner {
           message: connectionDecision.message,
           meta: { service: provider.service },
         };
+      }
+      // Approval checkpoint: after the proxy allow/block policy and connection policy passed,
+      // before credential lookup. `bypassApproval` skips the overlay on execute-on-poll calls.
+      if (!input.bypassApproval && input.approvalGate) {
+        const operationType = proxyOperationType(request.input.method);
+        // Virtual summaries (no_auth / marketplace) have synthetic ids that are not in the
+        // connection store; persisting one as connectionId would make the approved replay fail
+        // with connection_not_found. Only real stored ids (or a caller-supplied id) are kept.
+        const approvalConnectionId = connection?.virtual ? undefined : (connection?.id ?? input.connectionId);
+        const approvalCheck = await input.policy.evaluateApproval(
+          { id: provider.service, operationType, connectionId: approvalConnectionId },
+          input.approvalGate.lookup,
+        );
+        if (approvalCheck.outcome === "approval_required") {
+          const interception = await input.approvalGate.requireApproval({
+            kind: "proxy",
+            actionId: provider.service,
+            service: provider.service,
+            operationType,
+            caller: "http",
+            request: {
+              input: input.input,
+              connectionName: connection?.connectionName ?? input.connectionName,
+              connectionId: approvalConnectionId,
+            },
+          });
+          return {
+            ok: false,
+            status: 202,
+            errorCode: "approval_required",
+            message: "Proxy request requires approval before execution.",
+            meta: { service: provider.service },
+            approval: { check: approvalCheck, interception },
+          };
+        }
       }
       const target = await this.options.connections.resolveForExecution(
         provider.service,

@@ -21,6 +21,8 @@ export interface RunLog {
   connectionId?: string;
   connectionProfile?: CredentialProfile;
   runtimeTokenId?: string;
+  /** Approval record this run executed under (or was gated by), when the approval checkpoint ran. */
+  approvalId?: string;
   policy?: ActionPolicyDecision;
   inputSummary?: unknown;
   outputSummary?: unknown;

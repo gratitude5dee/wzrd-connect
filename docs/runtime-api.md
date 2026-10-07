@@ -373,6 +373,56 @@ Idempotency provides durable duplicate suppression and response replay, but it d
 exactly-once execution by the provider. This behavior applies to the HTTP Action endpoint; MCP
 `execute_action` calls do not accept an idempotency key.
 
+### Approval Checkpoints
+
+When any policy layer requires approval for an Action or proxy request (see
+[Access Surfaces](#access-surfaces)), the runtime does not call the provider. Instead it stores the
+request and returns HTTP `202` with `errorCode: "approval_required"` and
+`data: { approvalId, pollUrl, approvalUrl, operationType, expiresAt, preview }`. `pollUrl` is the
+relative poll path, `approvalUrl` opens the approval in the Web Console
+(`OOMOL_CONNECT_ORIGIN`-based), and `preview` is a redacted summary that never contains credential
+material. A second identical gated request from the same owner deduplicates onto the same pending
+approval id.
+
+Only the caller that created an approval can poll it — other runtime tokens, bootstrap tokens, and
+JWT callers receive `404 approval_not_found`:
+
+```bash
+curl -s -i http://localhost:3000/v1/approvals/<approvalId>
+```
+
+Poll outcomes:
+
+- `pending` → `202 approval_required` with `Retry-After: 2`. Polling faster than the interval
+  accumulates violations; repeated violations return `429 rate_limited`.
+- `approved` → the stored request executes **once, on this poll**, under a fresh policy evaluation,
+  and the Action/proxy result is returned with `meta.approvalId`. Approval alone never touches the
+  provider — execution happens on the creator's first post-approval poll, never on the admin's
+  approve call.
+- `executed` → the stored response replays for 24 hours, matching idempotency replay semantics.
+- `denied` → `403 approval_denied`.
+- `expired` → `410 approval_expired`. Pending approvals live for
+  `OOMOL_CONNECT_APPROVAL_TTL_SECONDS` (default 3600) and a maintenance sweep expires them.
+
+Run audit records from an approved execution carry `approvalId`, visible via `GET /api/runs/:id`.
+
+Admin endpoints power the console Approvals inbox:
+
+- `GET /api/approvals?status=pending|all&cursor=`
+- `GET /api/approvals/:id`
+- `POST /api/approvals/:id/approve` — optional `{"grant":{"ttlMinutes":30,"maxUses":0,"allowDestructive":false}}`;
+  grants let identical requests from the same runtime token skip approval. Only approvals created by
+  a persistent runtime token can mint grants; destructive operations require
+  `allowDestructive: true`.
+- `POST /api/approvals/:id/deny` — optional `{"reason":"..."}`.
+- `GET /api/approval-grants`, `DELETE /api/approval-grants/:id` — grant lifecycle.
+
+Decisions are atomic: the first decide call on a pending record wins, later ones return
+`409 approval_decided`. MCP clients get the pause object
+`{ status: "approval_required", approvalId, pollWith: "get_approval", approvalUrl }` from
+`execute_action` and poll with the `get_approval` tool (when the approvals store is configured);
+there is intentionally no MCP approve tool — deciding is an admin-only act.
+
 ## Action Guides
 
 Each Action has a local markdown guide that includes the input schema, scopes, provider
@@ -411,6 +461,8 @@ by age.
 - `GET /v1/actions?service=<service>`
 - `GET /v1/actions/:actionId`
 - `POST /v1/actions/:actionId`
+- `GET /v1/approvals/:id` — poll an approval the caller created; approval-gated requests execute on
+  the first post-approval poll (see Approval Checkpoints)
 - `GET /v1/apps`
 - `GET /v1/apps/services/:service`
 - `GET /v1/apps/authenticated`
@@ -494,6 +546,12 @@ These endpoints power the Web Console, examples, and setup scripts:
 - `PUT /api/runtime-policy`
 - `GET /api/runs`
 - `GET /api/runs/:id`
+- `GET /api/approvals`
+- `GET /api/approvals/:id`
+- `POST /api/approvals/:id/approve`
+- `POST /api/approvals/:id/deny`
+- `GET /api/approval-grants`
+- `DELETE /api/approval-grants/:id`
 - `POST /mcp`
 - `GET /mcp/tools`
 - `GET /openapi.json`

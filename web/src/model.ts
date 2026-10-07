@@ -245,11 +245,66 @@ export interface RunLog {
   outputSummary?: unknown;
   errorCode?: string;
   errorMessage?: string;
+  approvalId?: string;
 }
 
 export interface RunLogPage {
   items: RunLog[];
   nextCursor?: string;
+}
+
+export type ApprovalStatus = "pending" | "approved" | "denied" | "expired" | "executing" | "executed" | "failed";
+
+export interface ApprovalRecord {
+  id: string;
+  kind: "action" | "proxy";
+  actionId: string;
+  service: string;
+  connectionId?: string;
+  connectionName?: string;
+  connectionRequestId?: string;
+  operationType: string;
+  caller: string;
+  runtimeTokenId?: string;
+  preview?: unknown;
+  status: ApprovalStatus;
+  decidedBy?: string;
+  decidedAt?: string;
+  decisionFactor?: string;
+  decisionReason?: string;
+  grantId?: string;
+  executionId?: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+}
+
+export interface ApprovalListPage {
+  items: ApprovalRecord[];
+  nextCursor?: string;
+}
+
+export interface ApprovalGrant {
+  id: string;
+  approvalId?: string;
+  runtimeTokenId: string;
+  actionId: string;
+  connectionId?: string;
+  operationType: string;
+  expiresAt: string;
+  maxUses: number;
+  uses: number;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export interface ApprovalGrantList {
+  items: ApprovalGrant[];
+}
+
+export interface ApprovalDecisionResult {
+  approval: ApprovalRecord;
+  grant?: ApprovalGrant;
 }
 
 export interface ExecutionResult {
@@ -279,6 +334,7 @@ export interface AppData {
   runsNextCursor?: string;
   marketplace?: MarketplaceState;
   providerPreferences?: ProviderPreference[];
+  pendingApprovals?: number;
 }
 
 export interface OverviewSummary {
@@ -365,6 +421,7 @@ export const emptyData: AppData = {
   },
   runs: [],
   providerPreferences: [],
+  pendingApprovals: 0,
 };
 
 function emptyPolicyRules(): PolicyRules {

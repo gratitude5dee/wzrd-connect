@@ -27,6 +27,7 @@ import type { PoolClient } from "pg";
 import { Pool } from "pg";
 import { parseRuntimeActionHttpResult } from "../../api/runtime-api.ts";
 import { PlainTextSecretCodec } from "../../secrets/secret-codec-core.ts";
+import { ApprovalStore } from "../approval-store.ts";
 import { ConnectionRequestStore } from "../connection-request-store.ts";
 import { SqlConnectionStore } from "../connection-store.ts";
 import {
@@ -64,6 +65,7 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
   readonly runLogStore: IRunLogStore;
   readonly idempotencyStore: IIdempotencyStore;
   readonly marketplaceStore: IMarketplaceStore;
+  readonly approvalStore: ApprovalStore;
 
   private readonly pool: Pool;
   private readonly secretCodec: ISecretCodec;
@@ -93,6 +95,7 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
     this.connectionStore = new SqlConnectionStore(transaction, this.secretCodec);
     this.triggerStore = new SqlTriggerStore(transaction, this.secretCodec);
     this.saasProjectStore = new SaasProjectStore(transaction, this.secretCodec);
+    this.approvalStore = new ApprovalStore(transaction, this.secretCodec);
     this.oauthClientConfigStore = new PostgresOAuthClientConfigStore(pool, this.secretCodec);
     this.oauthStateStore = new PostgresOAuthStateStore(pool, this.secretCodec);
     this.runtimeTokenStore = new PostgresRuntimeTokenStore(pool);
@@ -145,6 +148,8 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
         delete from runtime_policy;
         delete from runs;
         delete from idempotency_records;
+        delete from approval_grants;
+        delete from approvals;
         delete from marketplace_config;
         delete from provider_preferences;
       `);
@@ -155,7 +160,7 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
     await runInTransaction(this.pool, async (client) => {
       await client.query("select pg_advisory_xact_lock(1326382671, 2)");
       await client.query(
-        "lock table connections, oauth_client_configs, oauth_states, connection_requests, idempotency_records, managed_project, oauth_sources, saas_cleanup, instance_identity, trigger_subscriptions in access exclusive mode",
+        "lock table connections, oauth_client_configs, oauth_states, connection_requests, idempotency_records, managed_project, oauth_sources, saas_cleanup, instance_identity, trigger_subscriptions, approvals in access exclusive mode",
       );
 
       const project = await client.query<RuntimeRow>("select value from managed_project where id = 1");
@@ -252,6 +257,19 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
         await client.query("update idempotency_records set response_value = $1 where key_hash = $2", [
           response.value,
           response.keyHash,
+        ]);
+      }
+
+      const approvalRows = await client.query<RuntimeRow>(
+        "select id, request_ciphertext from approvals where request_ciphertext is not null",
+      );
+      for (const row of approvalRows.rows) {
+        const value = await nextSecretCodec.encode(
+          await this.secretCodec.decode(readString(row, "request_ciphertext")),
+        );
+        await client.query("update approvals set request_ciphertext = $1 where id = $2", [
+          value,
+          readString(row, "id"),
         ]);
       }
 
