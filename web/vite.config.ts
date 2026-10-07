@@ -19,6 +19,7 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
+        "/.well-known": apiTarget,
         "/api": apiTarget,
         "/docs": apiTarget,
         "/mcp": apiTarget,
