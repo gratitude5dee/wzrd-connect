@@ -997,6 +997,18 @@
       "registrationDisabled": "Registration disabled",
       "notRegistered": "No registration — the connect call will be refused",
       "identityOnly": "Identity only",
+      "requestScopes": "Request more scopes",
+      "reauth": "Re-consent needed",
+      "consentDenied": "The Brand consent was denied.",
+      "consentExpired": "The Brand consent request expired.",
+      "consentFailed": "Could not check the Brand consent.",
+      "consent": {
+        "title": "Approve on the Brand’s page",
+        "hint": "Open the Brand’s login page and approve this connection. Connect never sees your Brand account credentials.",
+        "open": "Open Brand page",
+        "userCode": "User code",
+        "waiting": "Waiting for approval…"
+      },
       "previewFields": {
         "name": "Brand",
         "provider": "Provider origin",
@@ -1012,7 +1024,8 @@
         "alias": "Alias",
         "brand": "Brand origin",
         "interface": "Interface",
-        "mode": "Mode"
+        "mode": "Mode",
+        "scopes": "Granted scopes"
       }
     }
   }

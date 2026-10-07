@@ -337,6 +337,12 @@ function mapExecutionErrorStatus(code: string | undefined, details?: unknown): R
   if (code === "pact_unauthorized") {
     return 401;
   }
+  if (code === "pact_consent_denied") {
+    return 403;
+  }
+  if (code === "pact_consent_expired") {
+    return 410;
+  }
   if (code === "pact_context_closed") {
     return 409;
   }
@@ -406,7 +412,15 @@ export function connectionManagementFailure(error: { code: string; message: stri
       ? 409
       : errorCode === "pact_provider_unavailable"
         ? 502
-        : undefined;
+        : errorCode === "pact_consent_required"
+          ? 202
+          : errorCode === "pact_unauthorized"
+            ? 401
+            : errorCode === "pact_consent_denied"
+              ? 403
+              : errorCode === "pact_consent_expired"
+                ? 410
+                : undefined;
   return {
     status: pactStatus ?? (errorCode === "app_not_found" ? 404 : errorCode === "request_key_conflict" ? 409 : 400),
     errorCode,

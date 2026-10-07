@@ -115,6 +115,7 @@ export interface ConnectionRecord {
     interfaceUrl: string;
     providerOrigin: string;
     registrationId: string;
+    needsReauthorization?: boolean;
   };
 }
 
@@ -372,16 +373,35 @@ export interface PactCardPreviewResponse {
   preview: PactCardPreview;
 }
 
-export interface PactBrandConnectResponse {
-  success: boolean;
-  data: {
-    status: string;
-    connectionId: string;
-    connectionName: string;
-    identityOnly: boolean;
-    card: { name: string; version?: string; interfaceUrl: string; providerOrigin: string };
-  };
+/** Consent request a 202 `pact_consent_required` carries (spec §4.5). */
+export interface PactConsentRequest {
+  connectionRequestId: string;
+  verificationUriComplete?: string;
+  verificationUri?: string;
+  userCode?: string;
+  expiresAt: string;
+  pollUrl: string;
+  missingScopes?: string[];
+  contextId?: string;
 }
+
+export type PactBrandConnectResponse =
+  | {
+      success: true;
+      data: {
+        status: string;
+        connectionId: string;
+        connectionName: string;
+        identityOnly: boolean;
+        card: { name: string; version?: string; interfaceUrl: string; providerOrigin: string };
+      };
+    }
+  | {
+      success: false;
+      errorCode: string;
+      message: string;
+      data: PactConsentRequest;
+    };
 
 export interface ExecutionResult {
   ok: boolean;

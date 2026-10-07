@@ -51,6 +51,8 @@ export interface ConnectionSummary {
     interfaceUrl: string;
     providerOrigin: string;
     registrationId: string;
+    /** Delegation was revoked or its refresh failed — the person must consent again. */
+    needsReauthorization?: boolean;
   };
   /** Completed OAuth consent state; absent for legacy and non-OAuth connections. */
   oauthAuthorizationId?: string;
@@ -84,6 +86,8 @@ export interface ConnectionServiceOptions {
   store: IConnectionStore;
   logger?: RuntimeLogger;
   marketplace?: MarketplaceService;
+  /** RFC 7009 best-effort revocation for PACT Brand connections (spec §4.5). */
+  pactRevocation?: (stored: StoredPactConnection) => Promise<OAuthRevocationOutcome>;
 }
 
 export interface SaasConnectionReference {
@@ -226,6 +230,7 @@ export class ConnectionService {
   private readonly store: IConnectionStore;
   private readonly logger?: RuntimeLogger;
   private readonly marketplace?: MarketplaceService;
+  private readonly pactRevocation?: (stored: StoredPactConnection) => Promise<OAuthRevocationOutcome>;
 
   constructor(input: ConnectionServiceOptions) {
     this.providerHttpDispatch = input.providerHttpDispatch;
@@ -235,6 +240,7 @@ export class ConnectionService {
     this.store = input.store;
     this.logger = input.logger;
     this.marketplace = input.marketplace;
+    this.pactRevocation = input.pactRevocation;
   }
 
   async listConnections(): Promise<ConnectionSummary[]> {
@@ -352,7 +358,9 @@ export class ConnectionService {
       ? undefined
       : await this.resolveMarketplaceSummary(provider, connectionName, Boolean(stored));
     if (marketplace) return { kind: "marketplace", summary: marketplace };
-    if (!stored && connectionName && !this.supportsAuth(provider, "no_auth")) {
+    if (!stored && (connectionName || service === "pact") && !this.supportsAuth(provider, "no_auth")) {
+      // PACT actions can never run against a local executor, so an unresolved
+      // Brand connection is an error even when no name was given.
       throw new ConnectionError("connection_not_found", `${service} connection not found: ${name}.`);
     }
 
@@ -569,7 +577,11 @@ export class ConnectionService {
         saas: stored.reference,
       };
     if (stored.source === "pact") {
-      return { ...this.createPactConnectionSummary(stored), status: "active", comment: null };
+      return {
+        ...this.createPactConnectionSummary(stored),
+        status: stored.credential.delegation?.needsReauthorization === true ? "reauth_required" : "active",
+        comment: null,
+      };
     }
     const credential = stored.credential;
     return {
@@ -678,7 +690,23 @@ export class ConnectionService {
       return "unsupported";
     }
     const logContext = { service, connectionName };
-    if (!stored || stored.source !== undefined) {
+    if (!stored) {
+      return "unsupported";
+    }
+    if (stored.source === "pact") {
+      if (!this.pactRevocation) {
+        return "unsupported";
+      }
+      try {
+        const outcome = await this.pactRevocation(stored);
+        this.logger?.info({ ...logContext, revoked: outcome }, "pact token revocation completed");
+        return outcome;
+      } catch (error) {
+        this.logger?.warn({ ...logContext, error: describeError(error) }, "pact token revocation failed");
+        return "failed";
+      }
+    }
+    if (stored.source !== undefined) {
       return "unsupported";
     }
     if (stored.credential.authType !== "oauth2") {
@@ -718,13 +746,14 @@ export class ConnectionService {
         grantedScopes: credential.profile.grantedScopes ?? [],
       },
       source: "pact",
-      identityOnly: credential.delegation === undefined,
+      identityOnly: credential.delegation?.accessToken === undefined,
       pact: {
         cardUrl: credential.cardUrl,
         brandDomain: credential.brandDomain,
         interfaceUrl: credential.interfaceUrl,
         providerOrigin: credential.providerOrigin,
         registrationId: credential.registrationId,
+        needsReauthorization: credential.delegation?.needsReauthorization === true,
       },
     };
   }

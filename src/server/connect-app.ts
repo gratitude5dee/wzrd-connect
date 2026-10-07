@@ -15,6 +15,7 @@ import { MarketplaceService } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthCredentialRefreshService } from "../oauth/oauth-credential-refresh-service.ts";
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
+import { PactDelegationService } from "../pact/pact-delegation-service.ts";
 import { PactIdentityService } from "../pact/pact-identity-service.ts";
 import { PactService } from "../pact/pact-service.ts";
 import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
@@ -109,15 +110,6 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     store: options.runtimeDatabase.oauthClientConfigStore,
     isCustomClientConfigAvailable: (service) => options.secretCodec.encrypted && isCustomClientConfigAllowed(service),
   });
-  const connections = new ConnectionService({
-    providerHttpDispatch: options.providerHttpDispatch,
-    catalog: options.catalog,
-    oauthCredentials: new OAuthCredentialRefreshService(oauthClientConfigs, options.providerLoader),
-    providerLoader: options.providerLoader,
-    store: options.runtimeDatabase.connectionStore,
-    logger: options.logger,
-    marketplace,
-  });
   const pact = options.pact?.enabled
     ? (() => {
         const identity = new PactIdentityService({
@@ -126,19 +118,39 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
           issuer: options.configuredOrigin,
           keyGraceSeconds: options.pact!.keyGraceSeconds,
         });
+        const delegation = new PactDelegationService({
+          requests: options.runtimeDatabase.connectionRequestStore,
+          store: options.runtimeDatabase.connectionStore,
+          registrations: options.runtimeDatabase.pactRegistrationStore,
+          identity,
+          allowInsecureLoopback: options.pact!.allowInsecureLoopback,
+          logger: options.logger,
+        });
         return {
           identity,
           registrations: options.runtimeDatabase.pactRegistrationStore,
+          delegation,
           service: new PactService({
             store: options.runtimeDatabase.connectionStore,
             registrations: options.runtimeDatabase.pactRegistrationStore,
             identity,
+            delegation,
             allowInsecureLoopback: options.pact!.allowInsecureLoopback,
             logger: options.logger,
           }),
         };
       })()
     : undefined;
+  const connections = new ConnectionService({
+    providerHttpDispatch: options.providerHttpDispatch,
+    catalog: options.catalog,
+    oauthCredentials: new OAuthCredentialRefreshService(oauthClientConfigs, options.providerLoader),
+    providerLoader: options.providerLoader,
+    store: options.runtimeDatabase.connectionStore,
+    logger: options.logger,
+    marketplace,
+    pactRevocation: pact ? (stored) => pact.delegation.revokeGrant(stored) : undefined,
+  });
   const actions = new ActionRunner({
     providerHttpDispatch: options.providerHttpDispatch,
     catalog: options.catalog,

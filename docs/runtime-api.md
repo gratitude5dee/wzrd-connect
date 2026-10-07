@@ -264,6 +264,9 @@ allows this GET to query the remote result and commit the local connection. Cook
 and GETs in a local installation without authentication only read the stored result. An invalid
 Bearer token never falls back to a valid cookie. Poll no faster than once every two seconds and
 honor `Retry-After`; transient upstream failures do not permanently fail the authorization.
+For PACT consent requests (`service: "pact"`), the same GET drives the Brand token-endpoint
+poll: pending answers `202` + `Retry-After` with the consent fields, `access_denied` fails with
+`403 pact_consent_denied`, and `expired_token` with `410 pact_consent_expired`.
 
 The browser completion page uses authenticated
 `POST /api/oauth/connection-requests/:connectionRequestId/sync` with `Content-Type: application/json`,
@@ -297,15 +300,24 @@ provider origin must have an **enabled** Brand registration or the call answers
 `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` permits `http://` loopback in development.
 
 PACT connections appear in `list_connections` and `GET /api/connections` with
-`source: "pact"` and `identityOnly`, and run the `pact.*` catalog actions (`get_agent_card`,
-`get_delegation` are `read`; `send_message`, `request_scopes` are `write` and gated by approval
-policy like any other write). `pact.send_message` posts to the card's `interfaceUrl` with a
-PA-JWT `Authorization` header and `A2A-Version: 1.0`; replies and errors follow the mapping in
-[docs/pact.md](pact.md) (`pact_consent_required`, `pact_context_closed`,
-`pact_provider_unavailable`, `pact_unauthorized`, `rate_limited` with `Retry-After`).
+`source: "pact"`, `identityOnly`, and `pact.needsReauthorization`, and run the `pact.*` catalog
+actions (`get_agent_card`, `get_delegation` are `read`; `send_message`, `request_scopes` are
+`write` and gated by approval policy like any other write). `pact.send_message` posts to the
+card's `interfaceUrl` with a PA-JWT `Authorization` header, `A2A-Version: 1.0`, and
+`X-A2A-User-Delegation: Bearer <token>` once a delegation grant exists; replies and errors
+follow the mapping in [docs/pact.md](pact.md) (`pact_consent_required`, `pact_consent_denied`,
+`pact_consent_expired`, `pact_context_closed`, `pact_provider_unavailable`, `pact_unauthorized`,
+`rate_limited` with `Retry-After`).
 
-PACT connections cannot serve local proxy requests (`proxy_not_supported`) and carry no OAuth
-credentials — delegation tokens are added by a later phase.
+When the connect body asks for card-advertised `scopes`, Connect starts the Brand's RFC 8628
+device-authorization flow and answers `202 pact_consent_required` — see [docs/pact.md](pact.md)
+for the full grant lifecycle (commit-time JWT verification, 60 s refresh window, step-up
+unions, RFC 7009 revocation on disconnect). The pending grant polls through
+`GET /v1/connection-requests/:id`, which answers `202` + `Retry-After` while the person has not
+approved yet and drives at most one token-endpoint call per advertised interval.
+
+PACT connections cannot serve local proxy requests (`proxy_not_supported`) and never expose
+delegation or refresh token values — `pact.get_delegation` reports grant state only.
 
 ### SaaS Connection Execution
 

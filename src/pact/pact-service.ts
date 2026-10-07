@@ -1,13 +1,15 @@
 import type { IConnectionStore, StoredPactConnection } from "../connection-service.ts";
 import type { ExecutionResult, RuntimeLogger } from "../core/types.ts";
 import type { PactRegistrationStore } from "../server/storage/pact-registration-store.ts";
-import type { PactAgentCard } from "./agent-card.ts";
-import type { PactConnectionCredential } from "./pact-connection.ts";
+import type { PactAgentCard, PactCardDelegation } from "./agent-card.ts";
+import type { PactConnectionCredential, PactConnectionDelegation } from "./pact-connection.ts";
+import type { PactConsentPayload, PactDelegationService } from "./pact-delegation-service.ts";
 
 import { ConnectionError } from "../connection-service.ts";
 import { looseArray, optionalRecord, optionalString } from "../core/cast.ts";
 import { PactA2AError, sendPactMessage } from "./a2a-client.ts";
 import { PactCardError, fetchAgentCard } from "./agent-card.ts";
+import { PactDelegationError, assertPactScopesAvailable } from "./pact-delegation-service.ts";
 import { PactEgressError } from "./pact-fetch.ts";
 import { PactIdentityError, PactIdentityService } from "./pact-identity-service.ts";
 
@@ -18,6 +20,8 @@ export interface PactServiceOptions {
   store: IConnectionStore;
   registrations: PactRegistrationStore;
   identity: PactIdentityService;
+  /** Delegated authority (spec §4.5); absent keeps every flow identity-only. */
+  delegation?: PactDelegationService;
   /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK`. */
   allowInsecureLoopback?: boolean;
   fetcher?: typeof fetch;
@@ -42,6 +46,14 @@ export interface PactConnectBrandResult {
     interfaceUrl: string;
     providerOrigin: string;
   };
+}
+
+/** Device-flow hand-off (spec §4.5): the route answers `202 pact_consent_required` with `consent`. */
+export interface PactConsentRequiredResult {
+  status: "consent_required";
+  connectionId: string;
+  connectionName: string;
+  consent: PactConsentPayload;
 }
 
 /** Card preview for the console's Connect-a-Brand dialog — never stores anything. */
@@ -100,8 +112,12 @@ export class PactService {
     };
   }
 
-  /** Identity-only connect (spec §4.4): card validation + enabled registration, then store. */
-  async connectBrand(input: PactConnectBrandInput): Promise<PactConnectBrandResult> {
+  /**
+   * Connect a Brand (spec §4.4/§4.5): card validation + enabled registration.
+   * With `scopes`, the delegation device flow starts and the call answers
+   * `consent_required` — the grant lands when the poll commits.
+   */
+  async connectBrand(input: PactConnectBrandInput): Promise<PactConnectBrandResult | PactConsentRequiredResult> {
     const card = await this.fetchCard(input.agentCardUrl, input.signal);
     const registration = await this.options.registrations.findByOrigin(card.providerOrigin);
     if (!registration || !registration.enabled) {
@@ -112,7 +128,46 @@ export class PactService {
     }
     const scopes = input.scopes ?? [];
     if (scopes.length > 0) {
-      this.assertScopesAvailable(card.delegation?.scopes, scopes);
+      assertPactScopesAvailable(card.delegation?.scopes, scopes);
+      if (!this.options.delegation || !card.delegation) {
+        throw new ConnectionError("invalid_scope", "The Brand card advertises no delegation scopes.");
+      }
+      // A live grant already covering the request answers connected without a
+      // second consent — re-consent is only for genuinely new scopes.
+      const existing = await this.options.store.get("pact", input.connectionName);
+      const grant = existing?.source === "pact" ? existing.credential.delegation : undefined;
+      if (
+        existing?.source === "pact" &&
+        grant?.accessToken &&
+        !grant.needsReauthorization &&
+        scopes.every((scope) => grant.grantedScopes?.includes(scope))
+      ) {
+        const credential = this.createCredential(input, card, registration.id);
+        credential.delegation = mergeCardDelegation(grant, card.delegation);
+        credential.profile.accountId = existing.credential.profile.accountId;
+        credential.profile.grantedScopes = grant.grantedScopes;
+        const stored = await this.options.store.setPactConnection(input.connectionName, credential);
+        return this.connectResult(stored.id, stored.connectionName, credential);
+      }
+      const consent = await this.options.delegation.startDeviceRequest({
+        connectionName: input.connectionName,
+        endpoints: card.delegation,
+        interfaceUrl: card.interfaceUrl,
+        providerOrigin: card.providerOrigin,
+        audience: registration.audience,
+        requestedScopes: scopes,
+        signal: input.signal,
+      });
+      // The tokenless row exists so the Brand is visible and the poll commit
+      // can update it under its revision rules; tokens land only at consent.
+      const credential = this.createCredential(input, card, registration.id);
+      const stored = await this.options.store.setPactConnection(input.connectionName, credential);
+      return {
+        status: "consent_required",
+        connectionId: stored.id,
+        connectionName: stored.connectionName,
+        consent,
+      };
     }
     const credential = this.createCredential(input, card, registration.id);
     const stored = await this.options.store.setPactConnection(input.connectionName, credential);
@@ -140,6 +195,7 @@ export class PactService {
       interfaceUrl: card.interfaceUrl,
       providerOrigin: card.providerOrigin,
       registrationId: registration.id,
+      delegation: mergeCardDelegation(credential.delegation, card.delegation),
       card: { name: card.name, version: card.version, skills: card.skills, fetchedAt: card.fetchedAt },
     };
     const updated = await this.options.store.updateCredential({ ...stored, credential: next });
@@ -155,14 +211,6 @@ export class PactService {
       allowInsecureLoopback: this.options.allowInsecureLoopback,
       signal,
     });
-  }
-
-  private assertScopesAvailable(cardScopes: Record<string, string> | undefined, requested: string[]): void {
-    const advertised = new Set(Object.keys(cardScopes ?? {}));
-    const unknown = requested.filter((scope) => !advertised.has(scope));
-    if (unknown.length > 0) {
-      throw new ConnectionError("invalid_scope", `The Brand card does not advertise scopes: ${unknown.join(", ")}.`);
-    }
   }
 
   private createCredential(
@@ -184,11 +232,18 @@ export class PactService {
       interfaceUrl: card.interfaceUrl,
       providerOrigin: card.providerOrigin,
       registrationId,
+      delegation: card.delegation
+        ? {
+            deviceAuthorizationUrl: card.delegation.deviceAuthorizationUrl,
+            tokenUrl: card.delegation.tokenUrl,
+            oauth2MetadataUrl: card.delegation.oauth2MetadataUrl,
+            scopes: card.delegation.scopes,
+          }
+        : undefined,
       card: { name: card.name, version: card.version, skills: card.skills, fetchedAt: card.fetchedAt },
       profile: {
         accountId: card.providerOrigin,
         displayName: card.name,
-        grantedScopes: input.scopes && input.scopes.length > 0 ? input.scopes : undefined,
       },
     };
   }
@@ -202,7 +257,7 @@ export class PactService {
       status: "connected",
       connectionId: id,
       connectionName,
-      identityOnly: credential.delegation === undefined,
+      identityOnly: credential.delegation?.accessToken === undefined,
       card: {
         name: credential.card.name,
         version: credential.card.version,
@@ -246,15 +301,19 @@ export class PactService {
   }
 
   private readDelegation(credential: PactConnectionCredential): Record<string, unknown> {
+    if (this.options.delegation) {
+      return this.options.delegation.readGrant(credential);
+    }
     const delegation = credential.delegation;
-    if (!delegation) {
-      return { identityOnly: true };
+    if (!delegation?.accessToken) {
+      return { identityOnly: true, needsReauthorization: delegation?.needsReauthorization === true };
     }
     return {
       identityOnly: false,
       grantId: delegation.grantId,
       grantedScopes: delegation.grantedScopes ?? [],
       expiresAt: delegation.expiresAt,
+      needsReauthorization: delegation.needsReauthorization === true,
     };
   }
 
@@ -268,9 +327,17 @@ export class PactService {
     if (contextId !== undefined && new TextEncoder().encode(contextId).byteLength > pactContextIdMaxBytes) {
       return { ok: false, error: { code: "invalid_input", message: "contextId exceeds 256 bytes." } };
     }
+    // §4.5: refresh the delegation token before the send when it is inside the
+    // 60 s expiry window (invalid_grant clears the grant and fails 401 here).
+    const connection = this.options.delegation
+      ? await this.options.delegation.refreshGrant(input.connection, {
+          subject: input.subject,
+          signal: input.signal,
+        })
+      : input.connection;
     let reply;
     try {
-      reply = await this.sendToBrand(input.connection, input.executionId, text, contextId, input.subject, input.signal);
+      reply = await this.sendToBrand(connection, input.executionId, text, contextId, input.subject, input.signal);
     } catch (error) {
       // UNSUPPORTED_OPERATION is pact_context_closed only when a contextId was sent; without
       // one the provider rejected message:send outright, which is a provider failure (§4.4).
@@ -300,6 +367,23 @@ export class PactService {
     const task = reply.task;
     if (task.state === "TASK_STATE_AUTH_REQUIRED") {
       const metadata = task.metadata;
+      const missingScopes = looseArray(metadata["pact.missingScopes"]).filter(
+        (scope): scope is string => typeof scope === "string",
+      );
+      const verificationUriComplete = optionalString(metadata["pact.verificationUriComplete"]);
+      const stepUpContext = task.contextId ?? contextId;
+      // §4.5: start a device-code request for missing ∪ granted and keep the
+      // contextId so the agent retries the same message after consent.
+      if (this.options.delegation) {
+        const consent = await this.options.delegation.startStepUp(connection, {
+          missingScopes,
+          verificationUriComplete,
+          contextId: stepUpContext,
+          subject: input.subject,
+          signal: input.signal,
+        });
+        return this.consentFailure(consent, task.id);
+      }
       return {
         ok: false,
         error: {
@@ -309,11 +393,9 @@ export class PactService {
             status: 202,
             details: {
               taskId: task.id,
-              contextId: task.contextId,
-              missingScopes: looseArray(metadata["pact.missingScopes"]).filter(
-                (scope): scope is string => typeof scope === "string",
-              ),
-              verificationUriComplete: optionalString(metadata["pact.verificationUriComplete"]),
+              contextId: stepUpContext,
+              missingScopes,
+              verificationUriComplete,
             },
           },
         },
@@ -325,8 +407,11 @@ export class PactService {
     };
   }
 
-  /** §4.5 plumbing stub: full device-flow initiation lands in PR5. */
-  private runRequestScopes(input: PactActionExecutionInput): ExecutionResult {
+  /**
+   * `pact.request_scopes` (spec §4.5): granted ids answer immediately; anything
+   * else starts the device flow for the missing ∪ granted union.
+   */
+  private async runRequestScopes(input: PactActionExecutionInput): Promise<ExecutionResult> {
     const body = optionalRecord(input.input) ?? {};
     const requested = looseArray(body.scopes).filter((scope): scope is string => typeof scope === "string");
     const granted = new Set(input.connection.credential.delegation?.grantedScopes ?? []);
@@ -334,12 +419,34 @@ export class PactService {
     if (missing.length === 0) {
       return { ok: true, output: { grantedScopes: [...granted] } };
     }
+    if (!this.options.delegation) {
+      return {
+        ok: false,
+        error: {
+          code: "pact_consent_required",
+          message: "The requested scopes need a delegation grant.",
+          details: { status: 202, details: { missingScopes: missing } },
+        },
+      };
+    }
+    const outcome = await this.options.delegation.startScopeRequest(input.connection, requested, {
+      subject: input.subject,
+      signal: input.signal,
+    });
+    if (outcome.kind === "granted") {
+      return { ok: true, output: { grantedScopes: outcome.grantedScopes } };
+    }
+    return this.consentFailure(outcome.consent);
+  }
+
+  /** The 202 shape every consent hand-off shares (spec §4.5). */
+  private consentFailure(consent: PactConsentPayload, taskId?: string): ExecutionResult {
     return {
       ok: false,
       error: {
         code: "pact_consent_required",
-        message: "The requested scopes need a delegation grant (device flow lands in a later phase).",
-        details: { status: 202, details: { missingScopes: missing } },
+        message: "The Brand requires user consent for additional scopes.",
+        details: { status: 202, details: { taskId, ...consent } },
       },
     };
   }
@@ -369,15 +476,32 @@ export class PactService {
       return await this.postMessage(active.credential, paJwt, executionId, text, contextId, signal);
     } catch (error) {
       if (error instanceof PactA2AError && error.httpStatus === 401) {
-        // One refresh: re-mint the PA-JWT (delegation-token refresh is PR5).
-        return this.postMessage(
-          active.credential,
-          await this.signPaJwt(registration.audience, subject),
-          executionId,
-          text,
-          contextId,
-          signal,
-        );
+        // §4.4/§4.5: a grant exists → one delegation-token refresh, then retry;
+        // a second 401 marks the connection needsReauthorization and fails
+        // pact_unauthorized. No grant → one PA-JWT re-mint as before.
+        if (this.options.delegation && active.credential.delegation?.refreshToken) {
+          active = await this.options.delegation.refreshGrant(active, { subject, force: true, signal });
+        }
+        try {
+          return await this.postMessage(
+            active.credential,
+            await this.signPaJwt(registration.audience, subject),
+            executionId,
+            text,
+            contextId,
+            signal,
+          );
+        } catch (retryError) {
+          if (
+            retryError instanceof PactA2AError &&
+            retryError.httpStatus === 401 &&
+            active.credential.delegation?.accessToken &&
+            this.options.delegation
+          ) {
+            await this.options.delegation.markNeedsReauthorization(active);
+          }
+          throw retryError;
+        }
       }
       if (error instanceof PactA2AError && (error.httpStatus === 404 || error.httpStatus === 405)) {
         // The interface moved: re-validate the card once and retry on the new URL.
@@ -487,6 +611,9 @@ export class PactService {
         },
       };
     }
+    if (error instanceof PactDelegationError) {
+      return { ok: false, error: { code: error.code, message: error.message, details: error.details } };
+    }
     if (error instanceof PactCardError) {
       return { ok: false, error: { code: error.code, message: error.message } };
     }
@@ -505,6 +632,33 @@ export class PactService {
     this.options.logger?.warn({ error: String(error) }, "pact action failed unexpectedly");
     return { ok: false, error: { code: "internal_error", message: "PACT action failed unexpectedly." } };
   }
+}
+
+/**
+ * Keep the grant fields of a stored delegation while moving its endpoints and
+ * advertised scopes onto a freshly fetched card (reconnect / interface move).
+ */
+function mergeCardDelegation(
+  stored: PactConnectionDelegation | undefined,
+  card: PactCardDelegation | undefined,
+): PactConnectionDelegation | undefined {
+  if (!card) {
+    return stored;
+  }
+  return {
+    deviceAuthorizationUrl: card.deviceAuthorizationUrl,
+    tokenUrl: card.tokenUrl,
+    oauth2MetadataUrl: card.oauth2MetadataUrl,
+    scopes: card.scopes,
+    accessToken: stored?.accessToken,
+    refreshToken: stored?.refreshToken,
+    grantId: stored?.grantId,
+    grantedScopes: stored?.grantedScopes,
+    expiresAt: stored?.expiresAt,
+    tokenIssuer: stored?.tokenIssuer,
+    jwksUri: stored?.jwksUri,
+    needsReauthorization: stored?.needsReauthorization,
+  };
 }
 
 /** Connect-side failures (route layer maps codes via mapConnectionErrorStatus). */

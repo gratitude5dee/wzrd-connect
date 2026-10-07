@@ -997,6 +997,18 @@
       "registrationDisabled": "注册已停用",
       "notRegistered": "未注册 — 连接将被拒绝",
       "identityOnly": "仅身份",
+      "requestScopes": "申请更多 scope",
+      "reauth": "需要重新授权",
+      "consentDenied": "品牌拒绝了授权。",
+      "consentExpired": "品牌授权请求已过期。",
+      "consentFailed": "无法查询品牌授权状态。",
+      "consent": {
+        "title": "请在品牌页面完成授权",
+        "hint": "打开品牌的登录页面并批准此连接。Connect 永远不会看到你的品牌账户凭据。",
+        "open": "打开品牌页面",
+        "userCode": "用户代码",
+        "waiting": "等待授权…"
+      },
       "previewFields": {
         "name": "品牌",
         "provider": "提供方源",
@@ -1012,7 +1024,8 @@
         "alias": "别名",
         "brand": "品牌源",
         "interface": "接口",
-        "mode": "模式"
+        "mode": "模式",
+        "scopes": "已授权的 scope"
       }
     }
   }

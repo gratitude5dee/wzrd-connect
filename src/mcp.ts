@@ -12,6 +12,7 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { ConnectionError } from "./connection-service.ts";
 import { createActionSearchIndexProvider, searchActions as searchActionIndex } from "./core/action-search.ts";
+import { optionalRecord, optionalString } from "./core/cast.ts";
 import { describeSchemaType, readSchemaProperties, readSchemaRequired } from "./core/json-schema.ts";
 import { renderActionMarkdown } from "./server/api/action-markdown.ts";
 
@@ -414,6 +415,26 @@ async function executeAction(
     };
   }
   const executionMeta = createExecutionMeta(run);
+  if (!run.result.ok && run.result.error?.code === "pact_consent_required") {
+    // §4.7: the Brand consent hand-off lands as a pause object the agent polls
+    // with get_approval — Connect never proxies or observes the login.
+    const details = optionalRecord(optionalRecord(run.result.error.details)?.details) ?? {};
+    return {
+      ok: true,
+      data: {
+        status: "consent_required",
+        connectionRequestId: optionalString(details.connectionRequestId),
+        verificationUriComplete: optionalString(details.verificationUriComplete),
+        verificationUri: optionalString(details.verificationUri),
+        userCode: optionalString(details.userCode),
+        missingScopes: details.missingScopes,
+        contextId: optionalString(details.contextId),
+        expiresAt: optionalString(details.expiresAt),
+        pollWith: "get_approval",
+      },
+      ...executionMeta,
+    };
+  }
   if (!run.result.ok) {
     return {
       ok: false,

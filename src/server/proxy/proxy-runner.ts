@@ -19,7 +19,22 @@ import {
 import { SaasError } from "../../saas/saas-client.ts";
 import { mapConnectionErrorStatus } from "../api/runtime-api.ts";
 
-export type ProxyFailureStatus = 202 | 400 | 401 | 402 | 403 | 404 | 409 | 413 | 429 | 500 | 501 | 502 | 503 | 504;
+export type ProxyFailureStatus =
+  | 202
+  | 400
+  | 401
+  | 402
+  | 403
+  | 404
+  | 409
+  | 410
+  | 413
+  | 429
+  | 500
+  | 501
+  | 502
+  | 503
+  | 504;
 
 export interface ProxyRunnerOptions {
   providerHttpDispatch?: ProviderHttpDispatchOptions;
@@ -462,6 +477,12 @@ export class ProxyRunner {
     }
     if (code === "pact_unauthorized") {
       return 401;
+    }
+    if (code === "pact_consent_denied") {
+      return 403;
+    }
+    if (code === "pact_consent_expired") {
+      return 410;
     }
     return 400;
   }
