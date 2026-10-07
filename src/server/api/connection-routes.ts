@@ -1,6 +1,7 @@
 import type { ConnectionService } from "../../connection-service.ts";
 import type { OAuthFlowService } from "../../oauth/oauth-flow-service.ts";
 import type { SaasOAuthService } from "../../saas/saas-oauth-service.ts";
+import type { PactServerOptions } from "../connect-server.ts";
 import type { z } from "zod";
 
 import { Hono } from "hono";
@@ -21,10 +22,11 @@ interface ConnectionRoutesOptions {
   connections: ConnectionService;
   oauthFlow: OAuthFlowService;
   saasOAuth?: SaasOAuthService;
+  pact?: PactServerOptions;
 }
 
 /** Personal connection management. Authentication runs in the parent app. */
-export function createConnectionRoutes({ connections, oauthFlow, saasOAuth }: ConnectionRoutesOptions): Hono {
+export function createConnectionRoutes({ connections, oauthFlow, saasOAuth, pact }: ConnectionRoutesOptions): Hono {
   const app = new Hono();
   // The local runtime has one administrator principal, including its bearer and browser sessions.
   const owner = "local-admin";
@@ -76,14 +78,32 @@ export function createConnectionRoutes({ connections, oauthFlow, saasOAuth }: Co
   for (const reconnect of [false, true]) {
     const path = reconnect ? "/connections/by-id/:appId/connect" : "/connections/:service/connect";
     app.post(path, async (context) => {
+      const target = reconnect ? await connections.getStoredConnection(context.req.param("appId")!) : undefined;
+      const service = target?.service ?? context.req.param("service")!;
+      if (service === "pact" || target?.source === "pact") {
+        if (!pact?.service) throw new ConnectionError("provider_unavailable", "PACT is disabled on this deployment.");
+        if (target && target.source !== "pact")
+          throw new ConnectionError("unsupported_auth_type", "The connection uses a different credential type.");
+        if (target?.source === "pact") return writeRuntimeSuccess(context, await pact.service.reconnectBrand(target));
+        const { pactConnectionInput } = await import("./connection-input.ts");
+        const input = parseBody(pactConnectionInput, await readJsonBody(context));
+        return writeRuntimeSuccess(
+          context,
+          await pact.service.connectBrand({
+            connectionName: input.connectionName,
+            agentCardUrl: input.agentCardUrl,
+            scopes: input.scopes,
+            signal: context.req.raw.signal,
+          }),
+        );
+      }
       const { oauthConnectionInput } = await import("./connection-input.ts");
       const input = parseBody(oauthConnectionInput, await readJsonBody(context));
-      const target = reconnect ? await connections.getStoredConnection(context.req.param("appId")!) : undefined;
       return writeRuntimeSuccess(
         context,
         await oauthFlow.startConnectionRequest({
           ...input,
-          service: target?.service ?? context.req.param("service")!,
+          service,
           owner,
           signal: context.req.raw.signal,
           target,
@@ -97,7 +117,7 @@ export function createConnectionRoutes({ connections, oauthFlow, saasOAuth }: Co
         const target = reconnect ? await connections.getStoredConnection(context.req.param("appId")!) : undefined;
         if (
           target &&
-          (target.source === "saas" ||
+          (target.source !== undefined ||
             target.credential.authType !== (authType === "api-key" ? "api_key" : "custom_credential"))
         ) {
           throw new ConnectionError("unsupported_auth_type", "The connection uses a different credential type.");

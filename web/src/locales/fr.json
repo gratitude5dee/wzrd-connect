@@ -982,6 +982,38 @@
         "notes": "Notes",
         "enabled": "Activé"
       }
+    },
+    "brands": {
+      "heading": "Marques",
+      "connect": "Connecter une marque",
+      "connectTitle": "Connecter une marque",
+      "connectDescription": "Récupérez la carte d'agent de la marque, choisissez les scopes à demander et enregistrez une connexion à identité seule.",
+      "empty": "Aucune connexion de marque",
+      "emptyHint": "Connectez une marque pour permettre aux agents personnels de contacter ses agents de support.",
+      "preview": "Aperçu de la carte",
+      "previewFailed": "Impossible de récupérer la carte d'agent.",
+      "connectFailed": "Impossible de connecter la marque.",
+      "registered": "Enregistrée (activée)",
+      "registrationDisabled": "Enregistrement désactivé",
+      "notRegistered": "Aucun enregistrement — la connexion sera refusée",
+      "identityOnly": "Identité seule",
+      "previewFields": {
+        "name": "Marque",
+        "provider": "Origine du fournisseur",
+        "interface": "URL d'interface",
+        "registration": "Enregistrement"
+      },
+      "fields": {
+        "cardUrl": "URL de la carte d'agent ou origine",
+        "alias": "Alias de connexion",
+        "scopes": "Scopes"
+      },
+      "columns": {
+        "alias": "Alias",
+        "brand": "Origine de la marque",
+        "interface": "Interface",
+        "mode": "Mode"
+      }
     }
   }
 }

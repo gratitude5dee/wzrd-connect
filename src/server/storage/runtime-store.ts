@@ -20,6 +20,8 @@ export interface RunLog {
   ok: boolean;
   connectionId?: string;
   connectionProfile?: CredentialProfile;
+  /** Set to "pact" when the run executed against a PACT Brand connection. */
+  connectionSource?: "pact";
   runtimeTokenId?: string;
   /** Approval record this run executed under (or was gated by), when the approval checkpoint ran. */
   approvalId?: string;

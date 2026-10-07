@@ -28,8 +28,10 @@ npm run dev
   without it returns `400 encryption_required`.
 - `OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS` (default `86400`) controls how long a
   rotated key stays in the JWKS so in-flight PA-JWTs keep verifying.
-- `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` (default `false`) is reserved for
-  later phases that talk to loopback providers in development.
+- `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` (default `false`) lets PACT egress
+  reach `http://` loopback targets so a development Provider on `localhost`
+  answers agent-card and `message:send` calls. Production deployments must keep
+  it off: Brand egress is HTTPS-only and SSRF-guarded.
 
 ## Identity lifecycle
 
@@ -54,6 +56,68 @@ manage the trusted Brand origins. Each row stores `provider_origin` (unique,
 normalized to `scheme://host[:port]`), `audience`, `enabled`, and `notes`.
 Registering a Brand later lets Connect verify its callbacks and mint PA-JWTs for
 its audience.
+
+## Brand connections
+
+`POST /v1/connections/pact/connect` creates an identity-only Brand connection
+(`source: "pact"`, `authType: "oauth2"`, `identityOnly: true`). The body carries
+`connectionName` (the alias actions select with `x-oo-connector-alias`),
+`agentCardUrl`, and an optional `scopes` list.
+
+The connect call:
+
+1. Resolves the card URL — a bare origin expands to
+   `<origin>/.well-known/agent-card.json`. The fetch is HTTPS-only through the
+   SSRF-guarded fetch (≤3 re-validated redirects, 64 KiB cap, 10 s timeout);
+   `http://` loopback requires `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK`.
+2. Validates the card: an `HTTP+JSON`/`1.0` interface is selected by binding and
+   version (never by position), and the `httpAuthSecurityScheme` Bearer-JWT
+   scheme must appear alone in one `securityRequirements` entry.
+3. Refuses when the card's `providerOrigin` has no **enabled** Brand
+   registration — `409 pact_registration_required`.
+4. Stores only the card facts (name, version, skills, `interfaceUrl`,
+   `providerOrigin`, `registrationId`, grant scope list). No tokens or keys are
+   persisted for an identity-only Brand.
+
+`POST /api/pact/brands/preview` `{agentCardUrl}` returns the same card plus the
+matching registration state so the Console **PACT → Brands** dialog can offer
+scope checkboxes before connect.
+
+The `pact` catalog provider carries four actions:
+
+| Action                | Operation | Behavior                                             |
+| --------------------- | --------- | ---------------------------------------------------- |
+| `pact.get_agent_card` | `read`    | Returns the stored card summary.                     |
+| `pact.get_delegation` | `read`    | Returns `{identityOnly: true}` in this phase.        |
+| `pact.send_message`   | `write`   | POSTs `${interfaceUrl}/message:send` per Appendix A. |
+| `pact.request_scopes` | `write`   | Step-up plumbing only; full device flow lands later. |
+
+`pact.send_message` takes `input.text` (required) and optional
+`input.contextId` (opaque, ≤256 UTF-8 bytes). The request headers are
+`Authorization: Bearer <PA-JWT>`, `A2A-Version: 1.0`, and
+`X-A2A-User-Delegation: Bearer <token>` only when a delegation exists whose
+issuer matches the interface origin — delegation lands in a later phase, so the
+header is absent for identity-only connections. `messageId` is the execution ID.
+
+Response and error mapping:
+
+- `{message}` replies → `{messageId, text, contextId}` where `text` joins the
+  `text/plain` parts.
+- `{task}` with `TASK_STATE_AUTH_REQUIRED` → `202 pact_consent_required` with
+  `missingScopes`/`verificationUriComplete` in `data.details`.
+- A2A error envelopes map on `error.details[0].reason`:
+  `INVALID_PARAMS`/`CONTENT_TYPE_NOT_SUPPORTED` → `400 invalid_input`;
+  `UNSUPPORTED_OPERATION` → `409 pact_context_closed` when a `contextId` was
+  sent, else `502 pact_provider_unavailable`.
+- `401` → one PA-JWT re-mint and retry, then `pact_unauthorized`.
+- `404`/`405` → the card is refetched; when `interfaceUrl` moved the retry posts
+  to the new URL (persisted best-effort), else `502 pact_provider_unavailable`.
+- `429`/`503` keep their `Retry-After` seconds in the error details.
+- Provider replies are capped at 1 MiB; the stored `contextId` appears only on
+  the run summary, never PA-JWTs or delegation tokens.
+
+Run logs for these executions carry `connectionSource: "pact"`, and
+`list_connections` reports `source: "pact"` with `identityOnly`.
 
 ## Runtime token subjects
 

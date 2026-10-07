@@ -210,6 +210,7 @@ describe("Trigger runtime HTTP boundary", () => {
     const store: IConnectionStore = {
       get: sql.get.bind(sql),
       set: sql.set.bind(sql),
+      setPactConnection: sql.setPactConnection.bind(sql),
       updateCredential: sql.updateCredential.bind(sql),
       delete: sql.delete.bind(sql),
       list: sql.list.bind(sql),

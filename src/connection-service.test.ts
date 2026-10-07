@@ -1,9 +1,10 @@
-import type { IConnectionStore, StoredConnection } from "./connection-service.ts";
+import type { IConnectionStore, StoredConnection, StoredPactConnection } from "./connection-service.ts";
 import type { ProviderHttpAttempt, ProviderHttpDispatchOptions } from "./core/provider-http-dispatch.ts";
 import type { ActionExecutor, CredentialValidators, ProviderDefinition, ResolvedCredential } from "./core/types.ts";
 import type { MarketplaceService } from "./marketplace/marketplace-service.ts";
 import type { OAuthClientConfig } from "./oauth/oauth-client-config-service.ts";
 import type { IOAuthCredentialRefresher } from "./oauth/oauth-credential-refresh-service.ts";
+import type { PactConnectionCredential } from "./pact/pact-connection.ts";
 import type { IProviderLoader } from "./providers/provider-loader.ts";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -876,6 +877,7 @@ describe("ConnectionService", () => {
     const store: IConnectionStore = {
       get: memory.get.bind(memory),
       set: memory.set.bind(memory),
+      setPactConnection: memory.setPactConnection.bind(memory),
       updateCredential: memory.updateCredential.bind(memory),
       delete: memory.delete.bind(memory),
       list: memory.list.bind(memory),
@@ -1527,6 +1529,20 @@ class MemoryConnectionStore implements IConnectionStore {
       id: this.store.get(key)?.id ?? crypto.randomUUID(),
       revision: crypto.randomUUID(),
       service,
+      connectionName,
+      credential,
+    };
+    this.store.set(key, connection);
+    return connection;
+  }
+
+  async setPactConnection(connectionName: string, credential: PactConnectionCredential): Promise<StoredPactConnection> {
+    const key = createConnectionKey("pact", connectionName);
+    const connection: StoredPactConnection = {
+      source: "pact",
+      id: this.store.get(key)?.id ?? crypto.randomUUID(),
+      revision: crypto.randomUUID(),
+      service: "pact",
       connectionName,
       credential,
     };

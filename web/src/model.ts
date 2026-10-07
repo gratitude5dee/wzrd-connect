@@ -107,6 +107,15 @@ export interface ConnectionRecord {
   default?: boolean;
   profile?: Record<string, unknown> | null;
   metadata: Record<string, unknown>;
+  source?: "pact";
+  identityOnly?: boolean;
+  pact?: {
+    cardUrl: string;
+    brandDomain?: string;
+    interfaceUrl: string;
+    providerOrigin: string;
+    registrationId: string;
+  };
 }
 
 export interface MarketplaceState {
@@ -341,6 +350,37 @@ export interface PactRegistrationResponse {
 
 export interface PactRegistrationTokenResponse {
   token: string;
+}
+
+export interface PactCardScopeOption {
+  id: string;
+  description: string;
+}
+
+export interface PactCardPreview {
+  cardUrl: string;
+  name: string;
+  version?: string;
+  interfaceUrl: string;
+  providerOrigin: string;
+  skills: { id: string; name: string; description: string; tags?: string[] }[];
+  scopes: PactCardScopeOption[];
+  registration?: { id: string; audience: string; enabled: boolean };
+}
+
+export interface PactCardPreviewResponse {
+  preview: PactCardPreview;
+}
+
+export interface PactBrandConnectResponse {
+  success: boolean;
+  data: {
+    status: string;
+    connectionId: string;
+    connectionName: string;
+    identityOnly: boolean;
+    card: { name: string; version?: string; interfaceUrl: string; providerOrigin: string };
+  };
 }
 
 export interface ExecutionResult {

@@ -1,4 +1,4 @@
-import type { IConnectionStore, StoredConnection } from "../connection-service.ts";
+import type { IConnectionStore, StoredConnection, StoredPactConnection } from "../connection-service.ts";
 import type { ActionPolicyService } from "../core/action-policy.ts";
 import type { TokenPolicy } from "../core/action-policy.ts";
 import type { ActionSearchIndexProvider } from "../core/action-search.ts";
@@ -12,6 +12,7 @@ import type {
 } from "../core/types.ts";
 import type { IOAuthClientConfigStore, OAuthClientConfig } from "../oauth/oauth-client-config-service.ts";
 import type { IOAuthStateStore, OAuthAuthorizationState } from "../oauth/oauth-flow-service.ts";
+import type { PactConnectionCredential } from "../pact/pact-connection.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { RuntimeActionHttpResult } from "./api/runtime-api.ts";
 import type { RuntimeJwtVerifier } from "./api/runtime-jwt.ts";
@@ -40,6 +41,9 @@ import { MarketplaceError, MarketplaceService } from "../marketplace/marketplace
 import { OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
 import { PactIdentityService } from "../pact/pact-identity-service.ts";
+import { PactService } from "../pact/pact-service.ts";
+import { createMockPactProvider } from "../pact/test/mock-provider.ts";
+import { provider as pactProvider } from "../providers/pact/definition.ts";
 import { actionInputMaxDepth, hashActionRequest, hashIdempotencyKey } from "./actions/action-idempotency.ts";
 import { ActionRunner } from "./actions/action-runner.ts";
 import { registerStaticRoutes } from "./api/static-routes.ts";
@@ -4318,7 +4322,15 @@ interface CreateTestServerOptions {
   allowedCustomOAuth?: string[];
   executableActionIds?: string[];
   /** Mounts every PACT route when truthy; the service gates are exercised by passing a plaintext codec. */
-  pact?: boolean | { issuer?: string; keyGraceSeconds?: number };
+  pact?:
+    | boolean
+    | {
+        issuer?: string;
+        keyGraceSeconds?: number;
+        allowInsecureLoopback?: boolean;
+        /** Injected PACT egress fetcher (test mock Provider — never the network). */
+        fetcher?: typeof fetch;
+      };
 }
 
 function createTestServer(providers: ProviderDefinition[], options: CreateTestServerOptions = {}): ConnectServer {
@@ -4331,10 +4343,11 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
   const idempotency = options.idempotency ?? new MemoryIdempotencyStore();
   const runtimeTokens = options.runtimeTokens ?? new RuntimeTokenService(new MemoryRuntimeTokenStore());
   const runs = options.runs ?? new MemoryRunLogStore();
+  const connectionStore = new MemoryConnectionStore();
   const connections = new ConnectionService({
     catalog,
     providerLoader,
-    store: new MemoryConnectionStore(),
+    store: connectionStore,
   });
   const allowedCustomOAuth = new Set(options.allowedCustomOAuth);
   const isCustomClientConfigAllowed = (service: string): boolean =>
@@ -4355,6 +4368,26 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
       maxBytes: 1024 * 1024,
     });
 
+  const pactIdentity = options.pact
+    ? new PactIdentityService({
+        store: requestDatabase.pactIdentityStore,
+        secretCodec: options.secretCodec ?? new PlainTextSecretCodec(),
+        issuer:
+          typeof options.pact === "object" && options.pact.issuer !== undefined
+            ? options.pact.issuer
+            : "http://localhost:3000",
+        keyGraceSeconds: typeof options.pact === "object" ? options.pact.keyGraceSeconds : undefined,
+      })
+    : undefined;
+  const pactService = options.pact
+    ? new PactService({
+        store: connectionStore,
+        registrations: requestDatabase.pactRegistrationStore,
+        identity: pactIdentity!,
+        allowInsecureLoopback: typeof options.pact === "object" ? options.pact.allowInsecureLoopback : true,
+        fetcher: typeof options.pact === "object" ? options.pact.fetcher : undefined,
+      })
+    : undefined;
   const actionRunner = new ActionRunner({
     catalog,
     providerLoader,
@@ -4362,6 +4395,7 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
     runs,
     transitFiles,
     logger: options.logger,
+    pact: pactService,
   });
   const staticRoot = typeof options.staticRoot === "string" ? options.staticRoot : undefined;
 
@@ -4399,13 +4433,9 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
     approvals: options.approvals,
     pact: options.pact
       ? {
-          identity: new PactIdentityService({
-            store: requestDatabase.pactIdentityStore,
-            secretCodec: options.secretCodec ?? new PlainTextSecretCodec(),
-            issuer: typeof options.pact === "object" ? options.pact.issuer : "http://localhost:3000",
-            keyGraceSeconds: typeof options.pact === "object" ? options.pact.keyGraceSeconds : undefined,
-          }),
+          identity: pactIdentity!,
           registrations: requestDatabase.pactRegistrationStore,
+          service: pactService!,
         }
       : undefined,
     logger: options.logger,
@@ -4611,6 +4641,20 @@ class MemoryConnectionStore implements IConnectionStore {
       id: this.store.get(key)?.id ?? crypto.randomUUID(),
       revision: crypto.randomUUID(),
       service,
+      connectionName,
+      credential,
+    };
+    this.store.set(key, connection);
+    return connection;
+  }
+
+  async setPactConnection(connectionName: string, credential: PactConnectionCredential) {
+    const key = createConnectionKey("pact", connectionName);
+    const connection: StoredPactConnection = {
+      source: "pact",
+      id: this.store.get(key)?.id ?? crypto.randomUUID(),
+      revision: crypto.randomUUID(),
+      service: "pact",
       connectionName,
       credential,
     };
@@ -5070,5 +5114,159 @@ describe("ConnectServer PACT routes", () => {
     });
 
     expect((await app.request("/api/runtime-tokens/missing/rotate-subject", { method: "POST" })).status).toBe(404);
+  });
+});
+
+describe("ConnectServer PACT Brand connections", () => {
+  function createBrandApp(
+    options: {
+      pact?: boolean;
+      actionPolicy?: LocalActionPolicyService;
+      verifyJwks?: boolean;
+    } = {},
+  ) {
+    const provider = createMockPactProvider();
+    const runs = new MemoryRunLogStore();
+    const database = new SqliteRuntimeDatabase(":memory:");
+    requestDatabases.push(database);
+    const server = createTestServer([apiKeyProvider, pactProvider], {
+      pact: options.pact === false ? undefined : { fetcher: provider.fetcher },
+      secretCodec: new AesGcmSecretCodec("test-encryption-key"),
+      runs,
+      actionPolicy: options.actionPolicy,
+      approvals: options.actionPolicy ? new ApprovalService({ store: database.approvalStore }) : undefined,
+    });
+    const app = server.createApp();
+    const verifyJwks = async () => {
+      if (options.verifyJwks !== false) {
+        provider.setVerifierJwks((await (await app.request("/.well-known/jwks.json")).json()) as { keys: unknown[] });
+      }
+    };
+    return { app, provider, runs, verifyJwks };
+  }
+
+  async function registerBrand(app: { request: (input: string, init?: RequestInit) => Promise<Response> | Response }) {
+    const response = await app.request("/api/pact/registrations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        providerOrigin: "https://provider.example.com",
+        audience: "https://provider.example.com",
+      }),
+    });
+    expect(response.status).toBe(200);
+  }
+
+  async function connectBrand(app: { request: (input: string, init?: RequestInit) => Promise<Response> | Response }) {
+    const response = await app.request("/v1/connections/pact/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        connectionName: "acme",
+        agentCardUrl: "https://provider.example.com",
+      }),
+    });
+    return response;
+  }
+
+  it("rejects Brand connects when no registration covers the card origin", async () => {
+    const { app } = createBrandApp();
+    const response = await connectBrand(app);
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: "pact_registration_required",
+    });
+  });
+
+  it("rejects Brand connects when PACT is disabled", async () => {
+    const { app } = createBrandApp({ pact: false });
+    const response = await connectBrand(app);
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      errorCode: "provider_unavailable",
+    });
+  });
+
+  it("connects a Brand and answers messages through the run log with source pact", async () => {
+    const { app, provider, runs, verifyJwks } = createBrandApp();
+    // Identity creation is what serves the JWKS the mock verifies PA-JWTs against.
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await verifyJwks();
+    await registerBrand(app);
+
+    const connected = await connectBrand(app);
+    expect(connected.status).toBe(200);
+    await expect(connected.json()).resolves.toMatchObject({
+      success: true,
+      data: { status: "connected", connectionName: "acme", identityOnly: true },
+    });
+
+    const listed = await app.request("/api/connections");
+    await expect(listed.json()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ service: "pact", connectionName: "acme", source: "pact", identityOnly: true }),
+      ]),
+    );
+
+    const run = await app.request("/v1/actions/pact.send_message", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-oo-connector-alias": "acme" },
+      body: JSON.stringify({ input: { text: "where is my order?" } }),
+    });
+    expect(run.status).toBe(200);
+    const runBody = (await run.json()) as { data: Record<string, unknown> };
+    expect(runBody.data).toMatchObject({ text: "ok", contextId: expect.any(String) });
+
+    const wire = provider.requests.at(-1)!;
+    expect(wire.headers["authorization"]).toMatch(/^Bearer /);
+    expect(wire.headers["a2a-version"]).toBe("1.0");
+    expect(wire.body).toMatchObject({ message: { role: "ROLE_USER" } });
+
+    await expect(runs.list()).resolves.toMatchObject({
+      items: [expect.objectContaining({ actionId: "pact.send_message", ok: true, connectionSource: "pact" })],
+    });
+    const runLog = JSON.stringify(await runs.list());
+    const paJwt = wire.headers["authorization"]!.slice(7);
+    expect(runLog).not.toContain(paJwt);
+  });
+
+  it("gates pact.send_message behind the write approval policy", async () => {
+    const { app, provider } = createBrandApp({
+      actionPolicy: new LocalActionPolicyService({ requireApprovalOperations: ["write"] }),
+    });
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await registerBrand(app);
+    expect((await connectBrand(app)).status).toBe(200);
+
+    const run = await app.request("/v1/actions/pact.send_message", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-oo-connector-alias": "acme" },
+      body: JSON.stringify({ input: { text: "refund order 9" } }),
+    });
+    expect(run.status).toBe(202);
+    await expect(run.json()).resolves.toMatchObject({ success: false, errorCode: "approval_required" });
+    expect(provider.requests).toHaveLength(0);
+  });
+
+  it("pact.get_agent_card runs as a read without approval", async () => {
+    const { app } = createBrandApp({
+      actionPolicy: new LocalActionPolicyService({ requireApprovalOperations: ["write"] }),
+    });
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await registerBrand(app);
+    expect((await connectBrand(app)).status).toBe(200);
+
+    const run = await app.request("/v1/actions/pact.get_agent_card", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-oo-connector-alias": "acme" },
+      body: JSON.stringify({ input: {} }),
+    });
+    expect(run.status).toBe(200);
+    await expect(run.json()).resolves.toMatchObject({
+      success: true,
+      data: { name: "Mock Brand" },
+    });
   });
 });

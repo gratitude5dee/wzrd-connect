@@ -23,6 +23,17 @@ export const consoleOAuthConnectionInput: z.ZodType<{
   authorizationOptionIds: z.array(z.string().trim().min(1)).optional(),
 });
 
+/** Body for `POST /v1/connections/pact/connect` (spec §4.4 identity connect). */
+export const pactConnectionInput: z.ZodType<{
+  connectionName: string;
+  agentCardUrl: string;
+  scopes?: string[];
+}> = z.strictObject({
+  connectionName: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/),
+  agentCardUrl: z.string().trim().min(1),
+  scopes: z.array(z.string().trim().min(1)).optional(),
+});
+
 export const apiKeyConnectionInput: z.ZodType<{
   apiKey: string;
   extra?: Record<string, string>;

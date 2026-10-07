@@ -278,12 +278,20 @@ function readRuntimeRetryAfterSeconds(result: RuntimeActionHttpResult): number |
   return seconds !== undefined && Number.isSafeInteger(seconds) && seconds >= 0 ? seconds : undefined;
 }
 
-export function mapConnectionErrorStatus(error: ConnectionError): 400 | 404 | 409 {
+export function mapConnectionErrorStatus(error: ConnectionError): 400 | 404 | 409 | 502 {
   if (error.code === "unknown_service" || error.code === "connection_not_found") {
     return 404;
   }
-  if (error.code === "oauth_token_expired" || error.code === "oauth_refresh_unavailable") {
+  if (
+    error.code === "oauth_token_expired" ||
+    error.code === "oauth_refresh_unavailable" ||
+    error.code === "pact_registration_required" ||
+    error.code === "pact_context_closed"
+  ) {
     return 409;
+  }
+  if (error.code === "pact_provider_unavailable") {
+    return 502;
   }
   return 400;
 }
@@ -298,6 +306,10 @@ export const providerErrorCodes: readonly string[] = [
   "authorization_failed",
   "insufficient_credit",
   "invalid_input",
+  "pact_consent_required",
+  "pact_context_closed",
+  "pact_provider_unavailable",
+  "pact_unauthorized",
   "provider_error",
   "rate_limited",
 ];
@@ -318,6 +330,18 @@ function mapExecutionErrorStatus(code: string | undefined, details?: unknown): R
   }
   if (code === "oauth_token_expired" || code === "oauth_refresh_unavailable") {
     return 409;
+  }
+  if (code === "pact_consent_required") {
+    return 202;
+  }
+  if (code === "pact_unauthorized") {
+    return 401;
+  }
+  if (code === "pact_context_closed") {
+    return 409;
+  }
+  if (code === "pact_provider_unavailable") {
+    return 502;
   }
   if (code === "connection_not_found" || code === "unknown_service" || code === "unknown_action") {
     return 404;
@@ -377,8 +401,14 @@ export function connectionManagementFailure(error: { code: string; message: stri
         : error.code === "connection_changed"
           ? "request_key_conflict"
           : error.code;
+  const pactStatus =
+    errorCode === "pact_registration_required" || errorCode === "pact_context_closed"
+      ? 409
+      : errorCode === "pact_provider_unavailable"
+        ? 502
+        : undefined;
   return {
-    status: errorCode === "app_not_found" ? 404 : errorCode === "request_key_conflict" ? 409 : 400,
+    status: pactStatus ?? (errorCode === "app_not_found" ? 404 : errorCode === "request_key_conflict" ? 409 : 400),
     errorCode,
     message: error.message,
   };

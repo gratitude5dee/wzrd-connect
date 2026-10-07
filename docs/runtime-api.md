@@ -286,6 +286,27 @@ Project configuration, Console source selection, setup field semantics and recov
 documented in [SaaS OAuth](saas-oauth.md). Console starts named configured requests through
 POST /api/oauth/connection-requests; SDK clients continue using the /v1 endpoints above.
 
+### PACT Brand Connections
+
+When `OOMOL_CONNECT_PACT_ENABLED` is set, `POST /v1/connections/pact/connect` creates an
+identity-only Brand connection from an agent card URL (a bare origin resolves to
+`/.well-known/agent-card.json`). The card must advertise an `HTTP+JSON`/`1.0` interface and a
+lone Bearer-JWT `httpAuthSecurityScheme` in one `securityRequirements` entry; the card's
+provider origin must have an **enabled** Brand registration or the call answers
+`409 pact_registration_required`. Egress is HTTPS-only and SSRF-guarded —
+`OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` permits `http://` loopback in development.
+
+PACT connections appear in `list_connections` and `GET /api/connections` with
+`source: "pact"` and `identityOnly`, and run the `pact.*` catalog actions (`get_agent_card`,
+`get_delegation` are `read`; `send_message`, `request_scopes` are `write` and gated by approval
+policy like any other write). `pact.send_message` posts to the card's `interfaceUrl` with a
+PA-JWT `Authorization` header and `A2A-Version: 1.0`; replies and errors follow the mapping in
+[docs/pact.md](pact.md) (`pact_consent_required`, `pact_context_closed`,
+`pact_provider_unavailable`, `pact_unauthorized`, `rate_limited` with `Retry-After`).
+
+PACT connections cannot serve local proxy requests (`proxy_not_supported`) and carry no OAuth
+credentials — delegation tokens are added by a later phase.
+
 ### SaaS Connection Execution
 
 A saved SaaS connection sends action and proxy requests through its bound project and exact

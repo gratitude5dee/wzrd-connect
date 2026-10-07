@@ -8,7 +8,12 @@ import {
   idempotencyKeyMaxBytes,
   idempotencyRetentionHours,
 } from "../actions/action-idempotency.ts";
-import { oauthConnectionInput, apiKeyConnectionInput, customConnectionInput } from "./connection-input.ts";
+import {
+  oauthConnectionInput,
+  apiKeyConnectionInput,
+  customConnectionInput,
+  pactConnectionInput,
+} from "./connection-input.ts";
 import { policyRequestMaxBytes, policyRuleListMaxItems, policyRuleMaxBytes } from "./policy-input.ts";
 
 /**
@@ -2218,5 +2223,30 @@ function connectionManagementPaths(): Record<string, unknown> {
       };
     }
   }
+  // Concrete override for the {service} template: `pact` speaks a different body.
+  paths["/v1/connections/pact/connect"] = {
+    post: {
+      tags: ["Connections"],
+      summary: "Create a PACT Brand connection.",
+      description:
+        "Requires administrator credentials and OOMOL_CONNECT_PACT_ENABLED. Fetches and validates the Brand agent card, then stores an identity-only connection when the provider origin has an enabled PACT registration. Returns the saved connection synchronously; a missing registration answers 409 pact_registration_required.",
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: z.toJSONSchema(pactConnectionInput) } },
+      },
+      responses: {
+        200: jsonResponse(runtimeSuccessSchema(jsonSchema.object("A saved PACT Brand connection.", {}))),
+        400: jsonResponse(runtimeFailureSchema()),
+        401: jsonResponse(runtimeFailureSchema()),
+        403: jsonResponse(runtimeFailureSchema()),
+        404: jsonResponse(runtimeFailureSchema()),
+        409: jsonResponse(runtimeFailureSchema()),
+        429: jsonResponse(runtimeFailureSchema()),
+        502: jsonResponse(runtimeFailureSchema()),
+        503: jsonResponse(runtimeFailureSchema()),
+        504: jsonResponse(runtimeFailureSchema()),
+      },
+    },
+  };
   return paths;
 }

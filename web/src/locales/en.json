@@ -982,6 +982,38 @@
         "notes": "Notes",
         "enabled": "Enabled"
       }
+    },
+    "brands": {
+      "heading": "Brands",
+      "connect": "Connect a Brand",
+      "connectTitle": "Connect a Brand",
+      "connectDescription": "Fetch the Brand's agent card, choose the scopes to request, and save an identity-only connection.",
+      "empty": "No Brand connections",
+      "emptyHint": "Connect a Brand so personal agents can message its support agents.",
+      "preview": "Preview card",
+      "previewFailed": "Could not fetch the agent card.",
+      "connectFailed": "Could not connect the Brand.",
+      "registered": "Registered (enabled)",
+      "registrationDisabled": "Registration disabled",
+      "notRegistered": "No registration — the connect call will be refused",
+      "identityOnly": "Identity only",
+      "previewFields": {
+        "name": "Brand",
+        "provider": "Provider origin",
+        "interface": "Interface URL",
+        "registration": "Registration"
+      },
+      "fields": {
+        "cardUrl": "Agent card URL or origin",
+        "alias": "Connection alias",
+        "scopes": "Scopes"
+      },
+      "columns": {
+        "alias": "Alias",
+        "brand": "Brand origin",
+        "interface": "Interface",
+        "mode": "Mode"
+      }
     }
   }
 }

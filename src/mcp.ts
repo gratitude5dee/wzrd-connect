@@ -390,6 +390,7 @@ async function executeAction(
     connectionName,
     policy,
     runtimeTokenId: options.runtimeGrant?.tokenId,
+    runtimeSubject: options.runtimeGrant?.subject,
     signal: options.signal,
     approvalGate: options.approvalGate,
   });
@@ -560,6 +561,8 @@ function serializeConnection(connection: ConnectionSummary): Record<string, unkn
     authType: connection.authType,
     default: connection.default,
     profile: connection.profile,
+    source: connection.source,
+    identityOnly: connection.identityOnly,
   };
 }
 

@@ -1,5 +1,6 @@
-import type { IConnectionStore, StoredConnection } from "../../connection-service.ts";
+import type { IConnectionStore, StoredConnection, StoredPactConnection } from "../../connection-service.ts";
 import type { ExecutionContext, ResolvedCredential } from "../../core/types.ts";
+import type { PactConnectionCredential } from "../../pact/pact-connection.ts";
 import type { ToolAnnotations } from "@modelcontextprotocol/server";
 
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
@@ -143,6 +144,19 @@ class MemoryConnectionStore implements IConnectionStore {
   async set(service: string, connectionName: string, credential: ResolvedCredential) {
     this.stored = { id: "synthetic-connection", revision: "1", service, connectionName, credential };
     return this.stored;
+  }
+
+  async setPactConnection(connectionName: string, credential: PactConnectionCredential): Promise<StoredPactConnection> {
+    const connection: StoredPactConnection = {
+      source: "pact",
+      id: "synthetic-connection",
+      revision: "1",
+      service: "pact",
+      connectionName,
+      credential,
+    };
+    this.stored = connection;
+    return connection;
   }
 
   async updateCredential(input: StoredConnection): Promise<boolean> {

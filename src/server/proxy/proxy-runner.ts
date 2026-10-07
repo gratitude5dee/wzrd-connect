@@ -19,7 +19,7 @@ import {
 import { SaasError } from "../../saas/saas-client.ts";
 import { mapConnectionErrorStatus } from "../api/runtime-api.ts";
 
-export type ProxyFailureStatus = 202 | 400 | 402 | 403 | 404 | 409 | 413 | 429 | 500 | 501 | 502 | 503 | 504;
+export type ProxyFailureStatus = 202 | 400 | 401 | 402 | 403 | 404 | 409 | 413 | 429 | 500 | 501 | 502 | 503 | 504;
 
 export interface ProxyRunnerOptions {
   providerHttpDispatch?: ProviderHttpDispatchOptions;
@@ -220,12 +220,15 @@ export class ProxyRunner {
           meta: { service: provider.service, executionId, remoteExecutionId: remote.executionId },
         };
       }
-      if (target.kind === "marketplace")
+      if (target.kind === "marketplace" || target.kind === "pact")
         return {
           ok: false,
           status: 501,
           errorCode: "proxy_not_supported",
-          message: "Marketplace connections do not support proxy execution.",
+          message:
+            target.kind === "pact"
+              ? "PACT Brand connections do not support proxy execution."
+              : "Marketplace connections do not support proxy execution.",
           meta: { service: provider.service },
         };
       const executor = await this.options.providerLoader.loadProxyExecutor(provider.service, provider.displayName);
@@ -447,6 +450,18 @@ export class ProxyRunner {
     }
     if (code === "provider_error") {
       return 500;
+    }
+    if (code === "pact_consent_required") {
+      return 202;
+    }
+    if (code === "pact_context_closed") {
+      return 409;
+    }
+    if (code === "pact_provider_unavailable") {
+      return 502;
+    }
+    if (code === "pact_unauthorized") {
+      return 401;
     }
     return 400;
   }

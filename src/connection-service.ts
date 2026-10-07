@@ -14,6 +14,7 @@ import type {
 } from "./core/types.ts";
 import type { MarketplacePricing, MarketplaceService } from "./marketplace/marketplace-service.ts";
 import type { IOAuthCredentialRefresher, OAuthRevocationOutcome } from "./oauth/oauth-credential-refresh-service.ts";
+import type { PactConnectionCredential } from "./pact/pact-connection.ts";
 import type { IProviderLoader } from "./providers/provider-loader.ts";
 
 import { normalizeCredentialValues } from "./core/credential-fields.ts";
@@ -39,6 +40,18 @@ export interface ConnectionSummary {
   virtual: boolean;
   default: boolean;
   profile: CredentialProfile;
+  /** Set to "pact" on Brand connections; absent for local/saas/marketplace rows. */
+  source?: "pact";
+  /** PACT only: no delegation grant yet (spec §4.4 identity-only). */
+  identityOnly?: boolean;
+  /** PACT connection facts for the console and MCP — never secrets. */
+  pact?: {
+    cardUrl: string;
+    brandDomain?: string;
+    interfaceUrl: string;
+    providerOrigin: string;
+    registrationId: string;
+  };
   /** Completed OAuth consent state; absent for legacy and non-OAuth connections. */
   oauthAuthorizationId?: string;
   marketplace?: { id: string; pricing: MarketplacePricing };
@@ -94,7 +107,7 @@ export interface StoredSaasConnection {
   comment: string | null;
 }
 
-export type StoredConnection = StoredLocalConnection | StoredSaasConnection;
+export type StoredConnection = StoredLocalConnection | StoredSaasConnection | StoredPactConnection;
 
 export interface StoredLocalConnection {
   source?: "local";
@@ -103,6 +116,16 @@ export interface StoredLocalConnection {
   service: string;
   connectionName: string;
   credential: ResolvedCredential;
+}
+
+/** A PACT Brand connection row (spec §4.4); `service` is always "pact". */
+export interface StoredPactConnection {
+  source: "pact";
+  id: string;
+  revision: string;
+  service: string;
+  connectionName: string;
+  credential: PactConnectionCredential;
 }
 
 export interface DisconnectOptions {
@@ -124,7 +147,11 @@ export interface DisconnectedConnectionSummary {
   revoked: OAuthRevocationOutcome;
 }
 
-export type ExecutionConnection = LocalExecutionConnection | MarketplaceExecutionConnection | SaasExecutionConnection;
+export type ExecutionConnection =
+  | LocalExecutionConnection
+  | MarketplaceExecutionConnection
+  | SaasExecutionConnection
+  | PactExecutionConnection;
 
 interface LocalExecutionConnection {
   kind: "local";
@@ -143,13 +170,21 @@ interface SaasExecutionConnection {
   reference: SaasConnectionReference;
 }
 
+interface PactExecutionConnection {
+  kind: "pact";
+  summary: ConnectionSummary;
+  /** The stored row so PACT dispatch can persist card/credential refreshes. */
+  connection: StoredPactConnection;
+}
+
 /**
  * Storage contract for local provider connections.
  */
 export interface IConnectionStore {
   get(service: string, connectionName: string): Promise<StoredConnection | undefined>;
   set(service: string, connectionName: string, credential: ResolvedCredential): Promise<StoredLocalConnection>;
-  updateCredential(input: StoredLocalConnection, refresh?: boolean): Promise<boolean>;
+  setPactConnection(connectionName: string, credential: PactConnectionCredential): Promise<StoredPactConnection>;
+  updateCredential(input: StoredLocalConnection | StoredPactConnection, refresh?: boolean): Promise<boolean>;
   delete(service: string, connectionName: string): Promise<void>;
   list(): Promise<StoredConnection[]>;
 }
@@ -237,12 +272,14 @@ export class ConnectionService {
       const stored = connections.map((connection) =>
         connection.source === "saas"
           ? this.createManagedConnectionSummary(connection)
-          : this.createConfiguredConnectionSummary(
-              provider,
-              connection.id,
-              connection.connectionName,
-              connection.credential,
-            ),
+          : connection.source === "pact"
+            ? this.createPactConnectionSummary(connection)
+            : this.createConfiguredConnectionSummary(
+                provider,
+                connection.id,
+                connection.connectionName,
+                connection.credential,
+              ),
       );
       const marketplace = this.createMarketplaceConnectionSummary(provider, preferences);
       return marketplace ? [...stored, marketplace] : stored;
@@ -295,6 +332,7 @@ export class ConnectionService {
     }
 
     if (stored?.source === "saas") return this.createManagedConnectionSummary(stored);
+    if (stored?.source === "pact") return this.createPactConnectionSummary(stored);
     return stored
       ? this.createConfiguredConnectionSummary(provider, stored.id, name, stored.credential)
       : this.supportsAuth(provider, "no_auth")
@@ -320,6 +358,8 @@ export class ConnectionService {
 
     if (stored?.source === "saas")
       return { kind: "saas", summary: this.createManagedConnectionSummary(stored), reference: stored.reference };
+    if (stored?.source === "pact")
+      return { kind: "pact", summary: this.createPactConnectionSummary(stored), connection: stored };
     let credential: ResolvedCredential | undefined = stored?.credential;
     if (stored?.credential.authType === "oauth2") {
       credential = await this.resolveOAuthCredential(stored, stored.credential);
@@ -344,6 +384,8 @@ export class ConnectionService {
     const stored = await this.store.get(service, name);
     if (stored?.source === "saas")
       throw new ConnectionError("unsupported_auth_type", "SaaS credentials are not available locally.");
+    if (stored?.source === "pact")
+      throw new ConnectionError("unsupported_auth_type", "PACT credentials are not available to local executors.");
     if (stored) {
       return stored.credential.authType === "oauth2"
         ? await this.resolveOAuthCredential(stored, stored.credential)
@@ -526,6 +568,9 @@ export class ConnectionService {
         comment: stored.comment,
         saas: stored.reference,
       };
+    if (stored.source === "pact") {
+      return { ...this.createPactConnectionSummary(stored), status: "active", comment: null };
+    }
     const credential = stored.credential;
     return {
       status:
@@ -555,6 +600,11 @@ export class ConnectionService {
       throw new ConnectionError(
         "unsupported_auth_type",
         "Use the original source when reconnecting a SaaS connection.",
+      );
+    if (expected?.source === "pact")
+      throw new ConnectionError(
+        "unsupported_auth_type",
+        "Reconnect a PACT Brand connection through its card URL flow.",
       );
     const previousComment =
       expected?.credential.authType !== "no_auth" ? expected?.credential.metadata.connectionComment : undefined;
@@ -628,7 +678,10 @@ export class ConnectionService {
       return "unsupported";
     }
     const logContext = { service, connectionName };
-    if (!stored || stored.source === "saas" || stored.credential.authType !== "oauth2") {
+    if (!stored || stored.source !== undefined) {
+      return "unsupported";
+    }
+    if (stored.credential.authType !== "oauth2") {
       return "unsupported";
     }
     try {
@@ -646,6 +699,34 @@ export class ConnectionService {
       );
       return "failed";
     }
+  }
+
+  /** PACT Brand connection summary — `source`/`identityOnly` per spec §4.4, never secrets. */
+  private createPactConnectionSummary(stored: StoredPactConnection): ConnectionSummary {
+    const credential = stored.credential;
+    return {
+      id: stored.id,
+      service: stored.service,
+      connectionName: stored.connectionName,
+      authType: "oauth2",
+      configured: true,
+      virtual: false,
+      default: stored.connectionName === defaultConnectionName,
+      profile: {
+        accountId: credential.profile.accountId,
+        displayName: credential.profile.displayName,
+        grantedScopes: credential.profile.grantedScopes ?? [],
+      },
+      source: "pact",
+      identityOnly: credential.delegation === undefined,
+      pact: {
+        cardUrl: credential.cardUrl,
+        brandDomain: credential.brandDomain,
+        interfaceUrl: credential.interfaceUrl,
+        providerOrigin: credential.providerOrigin,
+        registrationId: credential.registrationId,
+      },
+    };
   }
 
   private createConfiguredConnectionSummary(

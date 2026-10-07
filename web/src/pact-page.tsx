@@ -1,4 +1,8 @@
 import type {
+  ConnectionRecord,
+  PactBrandConnectResponse,
+  PactCardPreview,
+  PactCardPreviewResponse,
   PactIdentity,
   PactIdentityResponse,
   PactRegistration,
@@ -9,7 +13,7 @@ import type {
 import type { ReactNode, SubmitEvent } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
-import { Copy, KeyRound, Loader2, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, KeyRound, Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiDelete, apiGet, apiPost, apiPut } from "./api";
 import { formatDate } from "./model";
@@ -29,6 +33,8 @@ export function PactPage(_props: PactPageProps): ReactNode {
   const t = useTranslate();
   const [identity, setIdentity] = useState<PactIdentity | null>(null);
   const [registrations, setRegistrations] = useState<PactRegistration[]>([]);
+  const [brands, setBrands] = useState<ConnectionRecord[]>([]);
+  const [connectOpen, setConnectOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -39,12 +45,14 @@ export function PactPage(_props: PactPageProps): ReactNode {
 
   async function load(): Promise<void> {
     try {
-      const [identityResult, registrationList] = await Promise.all([
+      const [identityResult, registrationList, connectionList] = await Promise.all([
         apiGet<PactIdentityResponse>("/api/pact/identity"),
         apiGet<PactRegistrationList>("/api/pact/registrations"),
+        apiGet<ConnectionRecord[]>("/api/connections"),
       ]);
       setIdentity(identityResult.identity);
       setRegistrations(registrationList.items);
+      setBrands(connectionList.filter((connection) => connection.service === "pact"));
       setError(null);
     } catch (caught) {
       setError(readErrorMessage(caught, t("pact.loadFailed")));
@@ -219,6 +227,57 @@ export function PactPage(_props: PactPageProps): ReactNode {
         )}
       </section>
 
+      <section className="example-card">
+        <div className="tab-row">
+          <h3>{t("pact.brands.heading")}</h3>
+          <Button size="sm" onClick={() => setConnectOpen(true)}>
+            <Plus size={14} />
+            {t("pact.brands.connect")}
+          </Button>
+        </div>
+        {brands.length === 0 ? (
+          <EmptyState title={t("pact.brands.empty")} description={t("pact.brands.emptyHint")} />
+        ) : (
+          <div className="table-wrap">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("pact.brands.columns.alias")}</TableHead>
+                  <TableHead>{t("pact.brands.columns.brand")}</TableHead>
+                  <TableHead>{t("pact.brands.columns.interface")}</TableHead>
+                  <TableHead>{t("pact.brands.columns.mode")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {brands.map((brand) => (
+                  <TableRow key={brand.id ?? brand.connectionName}>
+                    <TableCell>
+                      <code>{brand.connectionName}</code>
+                    </TableCell>
+                    <TableCell>
+                      <code>{brand.pact?.brandDomain ?? brand.pact?.providerOrigin}</code>
+                    </TableCell>
+                    <TableCell>
+                      <code>{brand.pact?.interfaceUrl}</code>
+                    </TableCell>
+                    <TableCell>{brand.identityOnly ? <Badge>{t("pact.brands.identityOnly")}</Badge> : null}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </section>
+
+      {connectOpen ? (
+        <ConnectBrandDialog
+          onClose={() => setConnectOpen(false)}
+          onConnected={() => {
+            setConnectOpen(false);
+            void load();
+          }}
+        />
+      ) : null}
       {createOpen ? (
         <RegistrationDialog
           onClose={() => setCreateOpen(false)}
@@ -457,6 +516,166 @@ function RegistrationTokenDialog(props: { onClose(): void }): ReactNode {
       </DialogContent>
     </Dialog>
   );
+}
+
+interface ConnectBrandDialogProps {
+  onClose(): void;
+  onConnected(): void;
+}
+
+function ConnectBrandDialog(props: ConnectBrandDialogProps): ReactNode {
+  const t = useTranslate();
+  const [cardUrl, setCardUrl] = useState("");
+  const [preview, setPreview] = useState<PactCardPreview | null>(null);
+  const [connectionName, setConnectionName] = useState("");
+  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<"preview" | "connect" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadPreview(event: SubmitEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    setBusy("preview");
+    setError(null);
+    setPreview(null);
+    try {
+      const result = await apiPost<PactCardPreviewResponse>("/api/pact/brands/preview", {
+        agentCardUrl: cardUrl.trim(),
+      });
+      setPreview(result.preview);
+      if (!connectionName) setConnectionName(suggestAlias(result.preview.name));
+      setSelectedScopes(new Set());
+    } catch (caught) {
+      setError(readErrorMessage(caught, t("pact.brands.previewFailed")));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function toggleScope(scopeId: string): void {
+    const next = new Set(selectedScopes);
+    if (next.has(scopeId)) next.delete(scopeId);
+    else next.add(scopeId);
+    setSelectedScopes(next);
+  }
+
+  async function connect(): Promise<void> {
+    setBusy("connect");
+    setError(null);
+    try {
+      await apiPost<PactBrandConnectResponse>("/v1/connections/pact/connect", {
+        connectionName: connectionName.trim(),
+        agentCardUrl: cardUrl.trim(),
+        scopes: selectedScopes.size ? [...selectedScopes] : undefined,
+      });
+      props.onConnected();
+    } catch (caught) {
+      setError(readErrorMessage(caught, t("pact.brands.connectFailed")));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => (!open ? props.onClose() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("pact.brands.connectTitle")}</DialogTitle>
+          <DialogDescription>{t("pact.brands.connectDescription")}</DialogDescription>
+        </DialogHeader>
+        <form className="form-grid" onSubmit={(event) => void loadPreview(event)}>
+          <Label className="field">
+            <span>{t("pact.brands.fields.cardUrl")}</span>
+            <Input
+              value={cardUrl}
+              onChange={(event) => setCardUrl(event.target.value)}
+              placeholder="https://brand.example.com"
+              required
+            />
+          </Label>
+          <div className="button-row">
+            <Button type="submit" disabled={busy !== null || !cardUrl.trim()}>
+              {busy === "preview" ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
+              {t("pact.brands.preview")}
+            </Button>
+          </div>
+        </form>
+        {preview ? (
+          <div className="form-grid">
+            <dl className="approval-detail-fields">
+              <dt>{t("pact.brands.previewFields.name")}</dt>
+              <dd>{preview.name}</dd>
+              <dt>{t("pact.brands.previewFields.provider")}</dt>
+              <dd>
+                <code>{preview.providerOrigin}</code>
+              </dd>
+              <dt>{t("pact.brands.previewFields.interface")}</dt>
+              <dd>
+                <code>{preview.interfaceUrl}</code>
+              </dd>
+              <dt>{t("pact.brands.previewFields.registration")}</dt>
+              <dd>
+                {preview.registration
+                  ? preview.registration.enabled
+                    ? t("pact.brands.registered")
+                    : t("pact.brands.registrationDisabled")
+                  : t("pact.brands.notRegistered")}
+              </dd>
+            </dl>
+            <Label className="field">
+              <span>{t("pact.brands.fields.alias")}</span>
+              <Input
+                value={connectionName}
+                onChange={(event) => setConnectionName(event.target.value)}
+                placeholder="acme-brand"
+                required
+              />
+            </Label>
+            {preview.scopes.length ? (
+              <div className="field">
+                <span>{t("pact.brands.fields.scopes")}</span>
+                {preview.scopes.map((scope) => (
+                  <label key={scope.id} className="field field-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selectedScopes.has(scope.id)}
+                      onChange={() => toggleScope(scope.id)}
+                    />
+                    <code>{scope.id}</code>
+                    <span className="muted-copy">{scope.description}</span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {error ? <InlineError message={error} /> : null}
+        <div className="button-row">
+          <Button variant="outline" type="button" onClick={props.onClose} disabled={busy !== null}>
+            {t("common.close")}
+          </Button>
+          <Button
+            type="button"
+            disabled={busy !== null || !preview || !connectionName.trim()}
+            onClick={() => void connect()}
+          >
+            {busy === "connect" ? <Loader2 className="spin" size={15} /> : <Plus size={15} />}
+            {t("pact.brands.connect")}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Alias suggestions follow the runtime `connectionName` validator. */
+function suggestAlias(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, "-")
+    .replace(/^[^a-z0-9]+/u, "")
+    .replace(/-+$/u, "")
+    .slice(0, 64);
 }
 
 function readErrorMessage(caught: unknown, fallback: string): string {

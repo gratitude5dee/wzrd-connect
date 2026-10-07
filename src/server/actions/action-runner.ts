@@ -4,6 +4,7 @@ import type { ActionPolicyDecision, ActionPolicySnapshot, ApprovalCheck } from "
 import type { ProviderHttpDispatchOptions } from "../../core/provider-http-dispatch.ts";
 import type { RuntimeLogger, ExecutionContext, ExecutionResult, TransitFileWriter } from "../../core/types.ts";
 import type { MarketplaceService } from "../../marketplace/marketplace-service.ts";
+import type { PactService } from "../../pact/pact-service.ts";
 import type { IProviderLoader } from "../../providers/provider-loader.ts";
 import type { SaasExecutionService } from "../../saas/saas-execution-service.ts";
 import type { ApprovalGate, ApprovalInterception } from "../approvals/approval-gate.ts";
@@ -30,6 +31,8 @@ export interface ActionRunnerOptions {
   logger?: RuntimeLogger;
   marketplace?: MarketplaceService;
   saas?: SaasExecutionService;
+  /** PACT Brand dispatch (spec §4.4); absent when OOMOL_CONNECT_PACT_ENABLED is off. */
+  pact?: PactService;
 }
 
 export interface RunActionInput {
@@ -40,6 +43,8 @@ export interface RunActionInput {
   connectionId?: string;
   policy: ActionPolicySnapshot;
   runtimeTokenId?: string;
+  /** Runtime token subject — used as the PA-JWT `sub` on PACT sends. */
+  runtimeSubject?: string;
   signal?: AbortSignal;
   /** Per-request approval gate; absent means the approval overlay never runs. */
   approvalGate?: ApprovalGate;
@@ -231,7 +236,25 @@ export class ActionRunner {
                       }
                     : resolvedConnection.kind === "marketplace"
                       ? (actionInput) => this.options.marketplace!.execute(action.id, actionInput, input.signal)
-                      : executor,
+                      : resolvedConnection.kind === "pact"
+                        ? (actionInput): Promise<ExecutionResult> =>
+                            this.options.pact
+                              ? this.options.pact.execute({
+                                  actionId: action.id,
+                                  connection: resolvedConnection.connection,
+                                  input: actionInput,
+                                  executionId,
+                                  subject: input.runtimeSubject,
+                                  signal: input.signal,
+                                })
+                              : Promise.resolve({
+                                  ok: false,
+                                  error: {
+                                    code: "provider_unavailable",
+                                    message: "PACT execution is disabled on this deployment.",
+                                  },
+                                })
+                        : executor,
                   input.input,
                   this.createExecutionContext(
                     resolvedConnection.kind === "local" ? resolvedConnection.getCredential : async () => undefined,
@@ -288,6 +311,7 @@ export class ActionRunner {
       ok: result.ok,
       connectionId: connection?.summary?.id,
       connectionProfile: connection?.summary?.profile,
+      connectionSource: connection?.kind === "pact" ? "pact" : undefined,
       runtimeTokenId: input.runtimeTokenId,
       approvalId,
       policy,

@@ -7,6 +7,7 @@ import type { RuntimeLogger, TransitFileUpload } from "../core/types.ts";
 import type { MarketplaceConfigInput, MarketplaceService } from "../marketplace/marketplace-service.ts";
 import type { OAuthClientConfigInput } from "../oauth/oauth-client-config-service.ts";
 import type { PactIdentityErrorCode, PactIdentityService } from "../pact/pact-identity-service.ts";
+import type { PactService } from "../pact/pact-service.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { SaasExecutionService } from "../saas/saas-execution-service.ts";
 import type { SaasOAuthService } from "../saas/saas-oauth-service.ts";
@@ -46,6 +47,8 @@ import { randomUUIDv7 } from "../core/uuid-v7.ts";
 import { MarketplaceError } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigError, OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthCallbackError, OAuthFlowError, OAuthFlowService } from "../oauth/oauth-flow-service.ts";
+import { PactCardError } from "../pact/agent-card.ts";
+import { PactEgressError } from "../pact/pact-fetch.ts";
 import { PactIdentityError, pactJwksCacheControl } from "../pact/pact-identity-service.ts";
 import { ProviderDispatchRequestError, toProviderExecutionError } from "../providers/provider-runtime.ts";
 import { SaasError } from "../saas/saas-client.ts";
@@ -185,6 +188,8 @@ export interface IConnectServerOptions {
 export interface PactServerOptions {
   identity: PactIdentityService;
   registrations: PactRegistrationStore;
+  /** Brand connections + message:send dispatch (spec §4.4). */
+  service: PactService;
 }
 
 /**
@@ -363,6 +368,7 @@ export class ConnectServer {
       app.post("/api/pact/identity", (context) => this.createPactIdentity(context));
       app.post("/api/pact/identity/rotate", (context) => this.rotatePactIdentity(context));
       app.post("/api/pact/identity/registration-token", (context) => this.createPactRegistrationToken(context));
+      app.post("/api/pact/brands/preview", (context) => this.previewPactBrand(context));
       app.get("/api/pact/registrations", (context) => this.listPactRegistrations(context));
       app.post("/api/pact/registrations", (context) => this.createPactRegistration(context));
       app.put("/api/pact/registrations/:id", (context) =>
@@ -927,6 +933,7 @@ export class ConnectServer {
           connectionName,
           policy,
           runtimeGrant?.tokenId,
+          runtimeGrant?.subject,
           context.req.raw.signal,
           connectionId,
         ),
@@ -951,6 +958,7 @@ export class ConnectServer {
           connectionName,
           policy,
           runtimeGrant?.tokenId,
+          runtimeGrant?.subject,
           context.req.raw.signal,
           connectionId,
           this.createApprovalGate(context),
@@ -1015,6 +1023,7 @@ export class ConnectServer {
       connectionName,
       policy,
       runtimeGrant?.tokenId,
+      runtimeGrant?.subject,
       context.req.raw.signal,
       connectionId,
       this.createApprovalGate(context),
@@ -1039,6 +1048,7 @@ export class ConnectServer {
     connectionName: string | undefined,
     policy: ActionPolicySnapshot,
     runtimeTokenId: string | undefined,
+    runtimeSubject: string | undefined,
     signal: AbortSignal | undefined,
     connectionId?: string,
     approvalGate?: ApprovalGate,
@@ -1053,6 +1063,7 @@ export class ConnectServer {
         connectionId,
         policy,
         runtimeTokenId,
+        runtimeSubject,
         signal,
         approvalGate,
         bypassApproval: approvalId !== undefined,
@@ -1487,6 +1498,7 @@ export class ConnectServer {
         stored.connectionName,
         policy,
         record.runtimeTokenId,
+        readRuntimeGrant(context)?.subject,
         context.req.raw.signal,
         stored.connectionId,
         this.createApprovalGate(context),
@@ -2007,6 +2019,24 @@ export class ConnectServer {
     return context.json({ id, deleted: true });
   }
 
+  /** Console "Connect a Brand" preview: fetch + validate the card, never stores anything. */
+  private async previewPactBrand(context: Context): Promise<Response> {
+    const body = await readJsonBody(context, policyRequestMaxBytes);
+    const agentCardUrl = optionalString(body.agentCardUrl);
+    if (!agentCardUrl) {
+      return jsonError(context, 400, "invalid_input", "agentCardUrl is required.");
+    }
+    try {
+      const preview = await this.options.pact!.service.previewAgentCard({
+        agentCardUrl,
+        signal: context.req.raw.signal,
+      });
+      return context.json({ preview });
+    } catch (error) {
+      return this.pactError(context, error);
+    }
+  }
+
   private pactIdentity(): PactIdentityService {
     return this.options.pact!.identity;
   }
@@ -2018,6 +2048,12 @@ export class ConnectServer {
   private pactError(context: Context, error: unknown): Response {
     if (error instanceof PactIdentityError) {
       return jsonError(context, pactIdentityErrorStatus(error.code), error.code, error.message);
+    }
+    if (error instanceof PactCardError) {
+      return jsonError(context, error.code === "pact_card_invalid" ? 400 : 502, error.code, error.message);
+    }
+    if (error instanceof PactEgressError) {
+      return jsonError(context, 502, "pact_provider_unavailable", "PACT egress was rejected.");
     }
     if (error instanceof PactRegistrationConflictError) {
       return jsonError(context, 409, "pact_registration_exists", error.message);

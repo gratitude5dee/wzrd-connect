@@ -1,5 +1,11 @@
-import type { IConnectionStore, StoredConnection, StoredLocalConnection } from "../../connection-service.ts";
+import type {
+  IConnectionStore,
+  StoredConnection,
+  StoredLocalConnection,
+  StoredPactConnection,
+} from "../../connection-service.ts";
 import type { ResolvedCredential } from "../../core/types.ts";
+import type { PactConnectionCredential } from "../../pact/pact-connection.ts";
 import type { ISecretCodec } from "../secrets/secret-codec-core.ts";
 import type { RequestTransaction } from "./connection-request-store.ts";
 import type { RuntimeRow } from "./runtime-sql.ts";
@@ -19,6 +25,15 @@ export class SqlConnectionStore implements IConnectionStore {
 
   private async read(row: RuntimeRow): Promise<StoredConnection> {
     if (row.source === "saas") return readSaasConnection(row, this.codec);
+    if (row.source === "pact")
+      return {
+        source: "pact",
+        id: row.id as string,
+        revision: row.revision as string,
+        service: row.service as string,
+        connectionName: row.connection_name as string,
+        credential: JSON.parse(await this.codec.decode(row.value as string)) as PactConnectionCredential,
+      };
     return {
       id: row.id as string,
       revision: row.revision as string,
@@ -83,30 +98,67 @@ export class SqlConnectionStore implements IConnectionStore {
     return { id: row.id as string, revision: row.revision as string, service, connectionName, credential };
   }
 
-  async updateCredential(input: StoredLocalConnection, refresh = false): Promise<boolean> {
+  async setPactConnection(connectionName: string, credential: PactConnectionCredential): Promise<StoredPactConnection> {
+    const value = await this.codec.encode(JSON.stringify(credential));
+    const [, , [row]] = await this.transaction([
+      {
+        sql: "update connections set revision = revision where service = 'pact' and connection_name = ?",
+        values: [connectionName],
+      },
+      queueSaasConnections("service = 'pact' and connection_name = ?", [connectionName]),
+      {
+        sql: `insert into connections (id, revision, service, connection_name, value, updated_at, source, provider_account_id)
+          values (?, ?, 'pact', ?, ?, ?, 'pact', null) on conflict (service, connection_name) do update set
+          revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at
+          where not exists (select 1 from trigger_subscriptions where connection_id = connections.id and mode <> 'resource-set' and status in ('active', 'deleting'))
+          and connections.source = 'pact' returning id, revision`,
+        values: [crypto.randomUUID(), crypto.randomUUID(), connectionName, value, new Date().toISOString()],
+      },
+    ]);
+    if (!row)
+      throw new HttpRequestError(
+        "connection_has_subscriptions",
+        "Cancel or abandon remote Trigger subscriptions before replacing this connection.",
+        409,
+      );
+    return {
+      source: "pact",
+      id: row.id as string,
+      revision: row.revision as string,
+      service: "pact",
+      connectionName,
+      credential,
+    };
+  }
+
+  async updateCredential(input: StoredLocalConnection | StoredPactConnection, refresh = false): Promise<boolean> {
     const value = await this.codec.encode(JSON.stringify(input.credential));
+    const verifiedAccountId =
+      input.source === "pact"
+        ? null
+        : input.credential.authType !== "no_auth" && input.credential.metadata.providerAccountVerified === true
+          ? input.credential.profile.accountId
+          : null;
+    const source = input.source === "pact" ? "pact" : "local";
     const [, [row]] = await this.transaction([
       { sql: "update connections set revision = revision where id = ?", values: [input.id] },
       {
         sql: `update connections set revision = ?, value = ?, updated_at = ?, provider_account_id = ?
-        where service = ? and connection_name = ? and id = ? and revision = ? and source = 'local'
+        where service = ? and connection_name = ? and id = ? and revision = ? and source = ?
         and (? = 1 or not exists (select 1 from trigger_subscriptions where connection_id = connections.id and mode <> 'resource-set' and status in ('active', 'deleting'))
         or (provider_account_id is not null and provider_account_id = ?)) returning id`,
         values: [
           crypto.randomUUID(),
           value,
           new Date().toISOString(),
-          input.credential.authType !== "no_auth" && input.credential.metadata.providerAccountVerified === true
-            ? input.credential.profile.accountId
-            : null,
+          verifiedAccountId,
           input.service,
           input.connectionName,
           input.id,
           input.revision,
+          source,
           refresh ? 1 : 0,
-          input.credential.authType !== "no_auth" && input.credential.metadata.providerAccountVerified === true
-            ? input.credential.profile.accountId
-            : null,
+          verifiedAccountId,
         ],
       },
     ]);

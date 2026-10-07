@@ -982,6 +982,38 @@
         "notes": "备注",
         "enabled": "已启用"
       }
+    },
+    "brands": {
+      "heading": "品牌",
+      "connect": "连接品牌",
+      "connectTitle": "连接品牌",
+      "connectDescription": "获取品牌的 Agent Card，选择要申请的 scope，并保存仅身份连接。",
+      "empty": "暂无品牌连接",
+      "emptyHint": "连接品牌后，个人代理即可向其支持代理发送消息。",
+      "preview": "预览卡片",
+      "previewFailed": "无法获取 Agent Card。",
+      "connectFailed": "无法连接品牌。",
+      "registered": "已注册（已启用）",
+      "registrationDisabled": "注册已停用",
+      "notRegistered": "未注册 — 连接将被拒绝",
+      "identityOnly": "仅身份",
+      "previewFields": {
+        "name": "品牌",
+        "provider": "提供方源",
+        "interface": "接口 URL",
+        "registration": "注册"
+      },
+      "fields": {
+        "cardUrl": "Agent Card URL 或源",
+        "alias": "连接别名",
+        "scopes": "Scopes"
+      },
+      "columns": {
+        "alias": "别名",
+        "brand": "品牌源",
+        "interface": "接口",
+        "mode": "模式"
+      }
     }
   }
 }
