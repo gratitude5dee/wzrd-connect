@@ -70,7 +70,8 @@ async function extractArchive(input: Record<string, unknown>, context: ApiKeyPro
   });
   const formData = await new Response(Uint8Array.from(bytes), { headers: { "content-type": contentType } }).formData();
   const files: ProviderTransitFile[] = [];
-  for (const value of formData.values()) {
+  for (const rawValue of formData.values()) {
+    const value: unknown = rawValue;
     if (!(value instanceof File)) continue;
     if (files.length >= maxExtractedFiles)
       throw new ProviderRequestError(413, `ArchiveAPI extraction exceeds the ${maxExtractedFiles} file limit`);

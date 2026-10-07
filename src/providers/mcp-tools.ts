@@ -70,7 +70,11 @@ function createLimitedMcpFetch(
   maxResponseBytes: number | undefined,
 ): ProviderFetch {
   if (maxResponseBytes === undefined) return fetcher;
-  return async (url, init) => limitMcpResponse(await fetcher(url, init), service, maxResponseBytes);
+  return Object.assign(
+    async (url: string | URL | Request, init?: RequestInit) =>
+      limitMcpResponse(await fetcher(url, init), service, maxResponseBytes),
+    fetcher,
+  );
 }
 interface ListMcpToolsOptions {
   includeOutputSchema?: boolean;

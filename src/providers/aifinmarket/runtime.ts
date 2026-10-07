@@ -216,7 +216,7 @@ function mapAifinMarketMcpError(error: unknown): unknown {
 }
 
 function createLimitedFetch(fetcher: typeof fetch): typeof fetch {
-  return async (request, init) => {
+  return Object.assign(async (request: string | URL | Request, init?: RequestInit) => {
     const response = await fetcher(request, { ...init, redirect: "manual" });
     if (response.status === 403) {
       await response.body?.cancel().catch(() => undefined);
@@ -241,7 +241,7 @@ function createLimitedFetch(fetcher: typeof fetch): typeof fetch {
       }),
     );
     return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
-  };
+  }, fetcher);
 }
 
 function normalizeNamedArguments(actionName: string, input: Record<string, unknown>): Record<string, unknown> {

@@ -70,7 +70,7 @@ function createSsrfGuardedFetch(
     fetch: fetcher,
     createError: (message) => createShopeeError("invalid_input", message, 400),
   });
-  return async (input, init) => {
+  return Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
     const url = assertPublicHttpUrl(String(input), {
       fieldName: options.fieldName,
       createError: (message) => createShopeeError("invalid_input", message, 400),
@@ -79,7 +79,7 @@ function createSsrfGuardedFetch(
       throw createShopeeError("invalid_input", `${options.fieldName} must use HTTPS.`, 400);
     }
     return guardedFetch(url, init);
-  };
+  }, fetcher);
 }
 
 export interface ShopeeTokenPayload {
