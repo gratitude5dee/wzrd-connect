@@ -1,17 +1,23 @@
-import type { CatalogStore } from "../../catalog-store.ts";
+import type { CatalogStore, RuntimeActionDefinition } from "../../catalog-store.ts";
 import type { ConnectionService, ConnectionSummary, ExecutionConnection } from "../../connection-service.ts";
 import type { ActionPolicyDecision, ActionPolicySnapshot, ApprovalCheck } from "../../core/action-policy.ts";
 import type { ProviderHttpDispatchOptions } from "../../core/provider-http-dispatch.ts";
 import type { RuntimeLogger, ExecutionContext, ExecutionResult, TransitFileWriter } from "../../core/types.ts";
 import type { MarketplaceService } from "../../marketplace/marketplace-service.ts";
+import type { PactProviderReceipt, PactReceiptService } from "../../pact/pact-receipts.ts";
 import type { PactService } from "../../pact/pact-service.ts";
 import type { IProviderLoader } from "../../providers/provider-loader.ts";
 import type { SaasExecutionService } from "../../saas/saas-execution-service.ts";
+import type { RuntimeCallerKind } from "../api/auth.ts";
 import type { ApprovalGate, ApprovalInterception } from "../approvals/approval-gate.ts";
+import type { ApprovalService } from "../approvals/approval-service.ts";
 import type { IRunLogStore, RunLog, RunLogCaller, RunLogListInput, RunLogPage } from "../storage/runtime-store.ts";
 
+import { createHash } from "node:crypto";
 import { ConnectionError } from "../../connection-service.ts";
+import { optionalStringArray } from "../../core/cast.ts";
 import { executeAction as executeProviderAction } from "../../core/execution.ts";
+import { canonicalJson } from "../../core/json-canonical.ts";
 import { withProviderHttpDispatch } from "../../core/provider-http-dispatch.ts";
 import {
   ProviderDispatchRequestError,
@@ -33,6 +39,10 @@ export interface ActionRunnerOptions {
   saas?: SaasExecutionService;
   /** PACT Brand dispatch (spec §4.4); absent when OOMOL_CONNECT_PACT_ENABLED is off. */
   pact?: PactService;
+  /** Custodian receipt mint + provider-receipt plumbing (spec §4.6); needs a PACT identity. */
+  receipts?: PactReceiptService;
+  /** Approval record reads for the §4.6 `approval` claim on receipt-bearing runs. */
+  approvals?: ApprovalService;
 }
 
 export interface RunActionInput {
@@ -45,6 +55,8 @@ export interface RunActionInput {
   runtimeTokenId?: string;
   /** Runtime token subject — used as the PA-JWT `sub` on PACT sends. */
   runtimeSubject?: string;
+  /** Bearer credential kind for the receipt's `act` claim (spec §4.6); default `dev`. */
+  callerKind?: RuntimeCallerKind;
   signal?: AbortSignal;
   /** Per-request approval gate; absent means the approval overlay never runs. */
   approvalGate?: ApprovalGate;
@@ -58,6 +70,8 @@ export interface ActionRunResult {
   executionId: string;
   auditPersisted: boolean;
   remoteExecutionId?: string;
+  /** Set when a §4.6 custodian receipt was minted; equals `executionId` (surfaced as `meta.receiptId`). */
+  receiptId?: string;
   failureStatus?: SaasError["status"];
   retryAfter?: string;
   result: ExecutionResult;
@@ -120,6 +134,7 @@ export class ActionRunner {
     let retryAfter: string | undefined;
     let approvalId: string | undefined = input.approvalId;
     let approval: ActionRunResult["approval"];
+    let providerReceipt: PactProviderReceipt | undefined;
     if (!policy.allowed) {
       result = { ok: false, error: { code: policy.code, message: policy.message } };
     } else if (input.signal?.aborted) {
@@ -237,23 +252,27 @@ export class ActionRunner {
                     : resolvedConnection.kind === "marketplace"
                       ? (actionInput) => this.options.marketplace!.execute(action.id, actionInput, input.signal)
                       : resolvedConnection.kind === "pact"
-                        ? (actionInput): Promise<ExecutionResult> =>
-                            this.options.pact
-                              ? this.options.pact.execute({
-                                  actionId: action.id,
-                                  connection: resolvedConnection.connection,
-                                  input: actionInput,
-                                  executionId,
-                                  subject: input.runtimeSubject,
-                                  signal: input.signal,
-                                })
-                              : Promise.resolve({
-                                  ok: false,
-                                  error: {
-                                    code: "provider_unavailable",
-                                    message: "PACT execution is disabled on this deployment.",
-                                  },
-                                })
+                        ? async (actionInput): Promise<ExecutionResult> => {
+                            if (!this.options.pact) {
+                              return {
+                                ok: false,
+                                error: {
+                                  code: "provider_unavailable",
+                                  message: "PACT execution is disabled on this deployment.",
+                                },
+                              };
+                            }
+                            const pactResult = await this.options.pact.execute({
+                              actionId: action.id,
+                              connection: resolvedConnection.connection,
+                              input: actionInput,
+                              executionId,
+                              subject: input.runtimeSubject,
+                              signal: input.signal,
+                            });
+                            providerReceipt = pactResult.providerReceipt;
+                            return pactResult;
+                          }
                         : executor,
                   input.input,
                   this.createExecutionContext(
@@ -318,7 +337,16 @@ export class ActionRunner {
       inputSummary: summarizeForRunLog(input.input),
       outputSummary: result.ok ? summarizeForRunLog(result.output) : undefined,
       ...auditError,
+      providerReceipt,
     };
+    runLog.receipt = await this.signCustodianReceipt({
+      input,
+      action,
+      connection,
+      runLog,
+      providerReceipt,
+      logContext,
+    });
 
     let auditPersisted = false;
     try {
@@ -351,6 +379,7 @@ export class ActionRunner {
     return {
       executionId,
       remoteExecutionId,
+      receiptId: runLog.receipt === undefined ? undefined : executionId,
       failureStatus,
       retryAfter,
       auditPersisted,
@@ -358,6 +387,71 @@ export class ActionRunner {
       connection: connection?.summary,
       approval,
     };
+  }
+
+  /**
+   * Mint the §4.6 custodian receipt for a completed run: compact JWS under the
+   * deployment identity with the spec's claim set. Returns undefined when no
+   * PACT identity is configured; signing failures warn and skip the receipt.
+   */
+  private async signCustodianReceipt(input: {
+    input: RunActionInput;
+    action: RuntimeActionDefinition;
+    connection: ExecutionConnection | undefined;
+    runLog: RunLog;
+    providerReceipt?: PactProviderReceipt;
+    logContext: Record<string, unknown>;
+  }): Promise<string | undefined> {
+    const receipts = this.options.receipts;
+    const issuer = receipts?.readIssuer();
+    if (!receipts || !issuer) {
+      return undefined;
+    }
+    const pactCredential = input.connection?.kind === "pact" ? input.connection.connection.credential : undefined;
+    try {
+      const claims: Record<string, unknown> = {
+        iss: issuer,
+        sub: input.input.runtimeSubject ?? (await receipts.readDeploymentSubject()),
+        act: input.input.runtimeTokenId ?? input.input.callerKind ?? "dev",
+        aud: pactCredential?.interfaceUrl ?? input.action.service,
+        jti: input.runLog.id,
+        iat: Math.floor(new Date(input.runLog.completedAt).getTime() / 1000),
+        action: {
+          id: input.action.id,
+          operationType: input.action.operationType,
+          connectionId: input.runLog.connectionId,
+          inputHash: createHash("sha256").update(canonicalJson(input.input.input)).digest("base64url"),
+          outcome: input.runLog.ok ? "ok" : "error",
+          errorCode: input.runLog.errorCode,
+        },
+      };
+      if (input.input.approvalId && this.options.approvals) {
+        const approval = await this.options.approvals.get(input.input.approvalId);
+        if (approval) {
+          claims.approval = {
+            approvalId: approval.id,
+            decidedBy: approval.decidedBy,
+            decidedAt: approval.decidedAt,
+            factor: approval.decisionFactor,
+            grantId: approval.grantId,
+          };
+        }
+      }
+      if (pactCredential) {
+        const scopesUsed = input.providerReceipt?.claims
+          ? optionalStringArray(input.providerReceipt.claims.scopes)
+          : undefined;
+        claims.provider_receipt = {
+          grantId: pactCredential.delegation?.grantId,
+          scopesUsed,
+          verified: input.providerReceipt?.verified === true,
+        };
+      }
+      return await receipts.signCustodianReceipt(claims);
+    } catch (error) {
+      this.options.logger?.warn({ ...input.logContext, error: String(error) }, "custodian receipt signing failed");
+      return undefined;
+    }
   }
 
   listRuns(input?: RunLogListInput): Promise<RunLogPage> {

@@ -521,6 +521,15 @@
       "timing": "Horaire",
       "input": "Entrée",
       "result": "Résultat"
+    },
+    "viewApproval": "Voir l'approbation",
+    "receipts": {
+      "custodian": "Reçu du dépositaire",
+      "provider": "Reçu du fournisseur",
+      "verify": "Vérifier",
+      "verified": "Vérifié",
+      "unverified": "Non vérifié",
+      "verifyFailed": "Échec de la vérification"
     }
   },
   "access": {

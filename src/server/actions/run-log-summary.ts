@@ -39,6 +39,7 @@ const safeErrorMessages: Record<string, string> = {
   pact_consent_required: "The Brand requires user consent for additional scopes.",
   pact_context_closed: "The Brand closed this conversation context.",
   pact_provider_unavailable: "The Brand provider is unavailable.",
+  pact_receipt_invalid: "The Brand's reply carried no verifiable PACT receipt; the Brand action may already have run.",
   pact_registration_required: "No enabled PACT registration covers this provider.",
   pact_unauthorized: "The Brand rejected the deployment identity.",
   pact_card_invalid: "The Brand agent card is invalid.",

@@ -14,6 +14,8 @@ export interface PactA2AMessage {
   contextId?: string;
   role?: string;
   parts: { text?: string; mediaType?: string }[];
+  /** Free-form A2A metadata; `pact.receipt` rides here (PACT §5.6). */
+  metadata?: Record<string, unknown>;
 }
 
 /** A2A Task object (PACT protocol TaskSchema): `status.state` carries the state enum. */
@@ -151,6 +153,7 @@ async function readSendReply(response: Response): Promise<PactSendReply> {
           const record = optionalRecord(part) ?? {};
           return { text: optionalString(record.text), mediaType: optionalString(record.mediaType) };
         }),
+        metadata: optionalRecord(message.metadata),
       },
     };
   }

@@ -521,6 +521,15 @@
       "timing": "時間",
       "input": "輸入",
       "result": "結果"
+    },
+    "viewApproval": "檢視核准",
+    "receipts": {
+      "custodian": "託管收據",
+      "provider": "提供者收據",
+      "verify": "驗證",
+      "verified": "已驗證",
+      "unverified": "未驗證",
+      "verifyFailed": "驗證失敗"
     }
   },
   "access": {

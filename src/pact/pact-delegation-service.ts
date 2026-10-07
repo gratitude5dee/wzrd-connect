@@ -12,20 +12,15 @@ import type { PactConnectionCredential, PactConnectionDelegation } from "./pact-
 import type { PactIdentityService } from "./pact-identity-service.ts";
 
 import { ConnectionError } from "../connection-service.ts";
-import { looseArray, optionalInteger, optionalRecord, optionalString } from "../core/cast.ts";
+import { optionalInteger, optionalRecord, optionalString } from "../core/cast.ts";
 import { readBoundedResponseBytes } from "../core/request.ts";
 import { createProviderTimeout, isAbortLikeError } from "../providers/provider-runtime.ts";
-import { PactEgressError, pactEgressFetch } from "./pact-fetch.ts";
+import { PactEgressError, pactEgressFetch, pactEgressMaxBytes, pactEgressRequestTimeoutMs } from "./pact-fetch.ts";
 import { PactIdentityError } from "./pact-identity-service.ts";
+import { PactJwksError, PactJwksResolver } from "./pact-jwks.ts";
 
-/** Device-flow budget (spec §4.5): 10 s on each OAuth endpoint call. */
-export const pactOAuthRequestTimeoutMs: number = 10_000;
-/** Provider metadata/JWKS bodies are small JSON documents. */
-export const pactOAuthMaxBytes: number = 64 * 1024;
 /** Refresh a delegation token when `expiresAt` is inside this window (spec §4.5). */
 export const pactDelegationRefreshWindowMs: number = 60_000;
-const jwksPositiveTtlMs = 5 * 60_000;
-const jwksNegativeTtlMs = 60_000;
 
 /** PACT requests are owned by the single administrator principal, like OAuth requests. */
 export const pactRequestOwner = "local-admin";
@@ -121,8 +116,6 @@ interface VerifiedGrant {
   jwksUri: string;
 }
 
-type JwksCacheEntry = { jwks: { keys: unknown[] }; expiresAt: number } | { failedUntil: number };
-
 /**
  * The PACT 1.0 device-code delegation flow (spec §4.5): start, paced polling,
  * token commit with provider-key verification, refresh, step-up, and
@@ -133,11 +126,12 @@ export class PactDelegationService {
   private readonly options: PactDelegationServiceOptions;
   /** Serializes refreshes per connection (cf. src/core/promise-cache.ts). */
   private readonly refreshes = new Map<string, Promise<StoredPactConnection>>();
-  /** Per-jwks_uri JWKS cache: 5 min positive, 60 s negative (spec §4.5). */
-  private readonly jwksCache = new Map<string, JwksCacheEntry>();
+  /** Per-jwks_uri JWKS cache shared with the receipt verifier. */
+  private readonly jwksResolver: PactJwksResolver;
 
   constructor(options: PactDelegationServiceOptions) {
     this.options = options;
+    this.jwksResolver = new PactJwksResolver(options);
   }
 
   /**
@@ -641,7 +635,7 @@ export class PactDelegationService {
     label: string,
     signal: AbortSignal | undefined,
   ): Promise<Response> {
-    const timeout = createProviderTimeout(signal, pactOAuthRequestTimeoutMs);
+    const timeout = createProviderTimeout(signal, pactEgressRequestTimeoutMs);
     try {
       return await pactEgressFetch(
         url,
@@ -672,7 +666,7 @@ export class PactDelegationService {
 
   private async readOauthJson(response: Response, label: string): Promise<Record<string, unknown>> {
     const bytes = await readBoundedResponseBytes(response, {
-      maxBytes: pactOAuthMaxBytes,
+      maxBytes: pactEgressMaxBytes,
       fieldName: `pact ${label}`,
       createError: (message) => new PactDelegationError("pact_provider_unavailable", message),
     });
@@ -830,7 +824,7 @@ export class PactDelegationService {
 
   /** RFC 8414 metadata: `issuer`, `jwks_uri`, optional `revocation_endpoint`. */
   private async readOauthMetadata(url: string, signal: AbortSignal | undefined): Promise<PactOauthMetadata> {
-    const timeout = createProviderTimeout(signal, pactOAuthRequestTimeoutMs);
+    const timeout = createProviderTimeout(signal, pactEgressRequestTimeoutMs);
     try {
       const response = await pactEgressFetch(
         url,
@@ -863,54 +857,22 @@ export class PactDelegationService {
   }
 
   /**
-   * Per-origin JWKS cache with spec §4.5 semantics — jose's createRemoteJWKSet
-   * cannot take the SSRF-guarded fetcher, so the equivalent cache sits on
-   * pactEgressFetch + createLocalJWKSet: 5 min positive, 60 s negative, one
-   * refetch on a kid miss.
+   * Fetch the Brand JWKS through the shared resolver (5 min positive / 60 s
+   * negative cache, one kid-miss refetch) and map its single failure onto the
+   * delegation error shape callers already unwrap.
    */
   private async resolveJwks(
     jwksUri: string,
     kid: string | undefined,
     signal: AbortSignal | undefined,
   ): Promise<{ keys: unknown[] }> {
-    const now = Date.now();
-    const cached = this.jwksCache.get(jwksUri);
-    if (cached) {
-      if ("jwks" in cached && cached.expiresAt > now) {
-        const hit = kid === undefined || cached.jwks.keys.some((key) => optionalRecord(key)?.kid === kid);
-        if (hit) {
-          return cached.jwks;
-        }
-      } else if ("failedUntil" in cached && cached.failedUntil > now) {
-        throw new PactDelegationError("pact_provider_unavailable", "The Brand JWKS is unavailable.");
-      }
-    }
-    const timeout = createProviderTimeout(signal, pactOAuthRequestTimeoutMs);
     try {
-      const response = await pactEgressFetch(
-        jwksUri,
-        { method: "GET", headers: { accept: "application/json" }, signal: timeout.signal },
-        { fetcher: this.options.fetcher, allowInsecureLoopback: this.options.allowInsecureLoopback },
-      );
-      const body = response.ok ? await this.readOauthJson(response, "JWKS") : {};
-      const keys = looseArray(body.keys).filter((key) => optionalRecord(key) !== undefined);
-      if (!response.ok || keys.length === 0) {
-        throw new PactDelegationError("pact_provider_unavailable", "The Brand JWKS is unavailable.");
-      }
-      const jwks = { keys };
-      this.jwksCache.set(jwksUri, { jwks, expiresAt: Date.now() + jwksPositiveTtlMs });
-      return jwks;
+      return await this.jwksResolver.resolve(jwksUri, kid, signal);
     } catch (error) {
-      this.jwksCache.set(jwksUri, { failedUntil: Date.now() + jwksNegativeTtlMs });
-      if (error instanceof PactDelegationError) {
-        throw error;
+      if (error instanceof PactJwksError) {
+        throw new PactDelegationError(error.code, error.message);
       }
-      if (isAbortLikeError(error) || timeout.didTimeout()) {
-        throw new PactDelegationError("pact_provider_unavailable", "The Brand JWKS request timed out.");
-      }
-      throw new PactDelegationError("pact_provider_unavailable", "The Brand JWKS request failed.");
-    } finally {
-      timeout.cleanup();
+      throw error;
     }
   }
 
@@ -958,7 +920,7 @@ export class PactDelegationService {
     } catch (error) {
       if ((error as { code?: string }).code === "ERR_JWKS_NO_MATCHING_KEY") {
         // One kid-miss refetch: the Provider rotated keys after our cache filled.
-        this.jwksCache.delete(metadata.jwksUri);
+        this.jwksResolver.invalidate(metadata.jwksUri);
         const fresh = await this.resolveJwks(metadata.jwksUri, undefined, signal);
         payload = (await verify(fresh)).payload;
       } else {

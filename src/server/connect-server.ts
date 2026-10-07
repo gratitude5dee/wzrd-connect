@@ -8,6 +8,7 @@ import type { MarketplaceConfigInput, MarketplaceService } from "../marketplace/
 import type { OAuthClientConfigInput } from "../oauth/oauth-client-config-service.ts";
 import type { PactDelegationService } from "../pact/pact-delegation-service.ts";
 import type { PactIdentityErrorCode, PactIdentityService } from "../pact/pact-identity-service.ts";
+import type { PactReceiptService } from "../pact/pact-receipts.ts";
 import type { PactService } from "../pact/pact-service.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { SaasExecutionService } from "../saas/saas-execution-service.ts";
@@ -15,7 +16,7 @@ import type { SaasOAuthService } from "../saas/saas-oauth-service.ts";
 import type { SaasProjectService } from "../saas/saas-project-service.ts";
 import type { TriggerMaintenance } from "../triggers/maintenance.ts";
 import type { TriggerRunner } from "../triggers/trigger-runner.ts";
-import type { LocalAuthOptions } from "./api/auth.ts";
+import type { LocalAuthOptions, RuntimeCallerKind } from "./api/auth.ts";
 import type { RuntimeActionHttpResult, RuntimeStatus } from "./api/runtime-api.ts";
 import type { ApprovalGate, ApprovalGateRequest } from "./approvals/approval-gate.ts";
 import type { ApprovalService, CreateGrantInput } from "./approvals/approval-service.ts";
@@ -70,6 +71,7 @@ import {
   createLocalAuthMiddleware,
   hasAdminBearer,
   readLocalAuthSession,
+  readRuntimeCallerKind,
   readRuntimeGrant,
 } from "./api/auth.ts";
 import { getResponseCachePolicy } from "./api/cache-policy.ts";
@@ -195,6 +197,8 @@ export interface PactServerOptions {
   service: PactService;
   /** Delegation device flow (spec §4.5) driving `/v1/connection-requests/:id` polls. */
   delegation: PactDelegationService;
+  /** Receipt verification/mint (spec §4.6); already wired into `service` + `actions`. */
+  receipts?: PactReceiptService;
 }
 
 /**
@@ -303,6 +307,9 @@ export class ConnectServer {
       this.listRuntimeAppsByService(context, context.req.param("service")),
     );
     app.post("/v1/proxy/:service", (context) => this.createRuntimeProxyRequest(context, context.req.param("service")));
+    app.get("/v1/runs/:executionId/receipt", (context) =>
+      this.getRuntimeRunReceipt(context, context.req.param("executionId")),
+    );
     if (this.options.approvals) {
       app.get("/v1/approvals/:id", (context) => this.pollRuntimeApproval(context, context.req.param("id")));
     }
@@ -760,6 +767,30 @@ export class ConnectServer {
     return run ? context.json(run) : jsonError(context, 404, "run_not_found", `Run not found: ${id}.`);
   }
 
+  /**
+   * §4.6 receipt read for agents: the caller may only fetch a receipt for a run
+   * its own bearer created — stored-token bearers see only runs carrying their
+   * token id; every other credential kind sees runs with no token id. Unknown
+   * or foreign runs both answer 404 so the endpoint doesn't disclose the
+   * existence of another caller's executions.
+   */
+  private async getRuntimeRunReceipt(context: Context, executionId: string): Promise<Response> {
+    const run = await this.options.actions.getRun(executionId);
+    const grant = readRuntimeGrant(context);
+    const ownerTokenId = grant?.tokenId;
+    if (!run || run.runtimeTokenId !== ownerTokenId) {
+      return writeRuntimeFailure(context, {
+        status: 404,
+        errorCode: "run_not_found",
+        message: `Run not found: ${executionId}.`,
+      });
+    }
+    return writeRuntimeSuccess(context, {
+      receipt: run.receipt ?? null,
+      providerReceipt: run.providerReceipt ?? null,
+    });
+  }
+
   private async searchApiActions(context: Context): Promise<Response> {
     const query = readSearchQuery(context);
     if (!query.ok) {
@@ -941,6 +972,9 @@ export class ConnectServer {
           runtimeGrant?.subject,
           context.req.raw.signal,
           connectionId,
+          undefined,
+          undefined,
+          readRuntimeCallerKind(context),
         ),
       );
     }
@@ -967,6 +1001,8 @@ export class ConnectServer {
           context.req.raw.signal,
           connectionId,
           this.createApprovalGate(context),
+          undefined,
+          readRuntimeCallerKind(context),
         ),
       );
     }
@@ -1058,6 +1094,7 @@ export class ConnectServer {
     connectionId?: string,
     approvalGate?: ApprovalGate,
     approvalId?: string,
+    callerKind?: RuntimeCallerKind,
   ): Promise<RuntimeActionHttpResult> {
     try {
       const run = await this.options.actions.run({
@@ -1070,6 +1107,7 @@ export class ConnectServer {
         runtimeTokenId,
         runtimeSubject,
         signal,
+        callerKind,
         approvalGate,
         bypassApproval: approvalId !== undefined,
         approvalId,
@@ -1093,6 +1131,7 @@ export class ConnectServer {
         actionId,
         executionId: run.executionId,
         remoteExecutionId: run.remoteExecutionId,
+        receiptId: run.receiptId,
         failureStatus: run.failureStatus,
         retryAfter: run.retryAfter,
         auditPersisted: run.auditPersisted,
@@ -1557,6 +1596,7 @@ export class ConnectServer {
         stored.connectionId,
         this.createApprovalGate(context),
         record.id,
+        readRuntimeCallerKind(context),
       );
       return await finish(
         result.status === 200 ? "executed" : "failed",
@@ -1755,6 +1795,7 @@ export class ConnectServer {
       actionSearch: this.actionSearch,
       getPolicySnapshot: () => this.getPolicySnapshot(context),
       runtimeGrant: readRuntimeGrant(context),
+      callerKind: readRuntimeCallerKind(context),
       publicOrigin: this.options.publicOrigin,
       approvalGate: this.createApprovalGate(context),
       pollApproval: this.options.approvals ? (query) => this.pollApprovalForTool(context, query) : undefined,

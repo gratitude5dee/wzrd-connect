@@ -4,6 +4,7 @@ import type { ActionPolicyDecision, ActionPolicySnapshot } from "./core/action-p
 import type { ActionSearchIndexProvider } from "./core/action-search.ts";
 import type { AuthType, CredentialProfile, JsonSchema } from "./core/types.ts";
 import type { ActionRunner, ActionRunResult } from "./server/actions/action-runner.ts";
+import type { RuntimeCallerKind } from "./server/api/auth.ts";
 import type { ApprovalGate } from "./server/approvals/approval-gate.ts";
 import type { RuntimeGrant } from "./server/storage/runtime-token-service.ts";
 import type { CallToolResult } from "@modelcontextprotocol/server";
@@ -26,6 +27,8 @@ export interface IMcpServerOptions {
   actionSearch?: ActionSearchIndexProvider;
   getPolicySnapshot(): Promise<ActionPolicySnapshot>;
   runtimeGrant?: RuntimeGrant;
+  /** Bearer credential kind for the §4.6 receipt `act` claim (defaults `dev`). */
+  callerKind?: RuntimeCallerKind;
   /** Public origin, used to build approval console deep links. */
   publicOrigin?: string;
   /** Approval checkpoint for gated actions; omitted when the approvals store is not configured. */
@@ -392,6 +395,7 @@ async function executeAction(
     policy,
     runtimeTokenId: options.runtimeGrant?.tokenId,
     runtimeSubject: options.runtimeGrant?.subject,
+    callerKind: options.callerKind,
     signal: options.signal,
     approvalGate: options.approvalGate,
   });
@@ -534,6 +538,8 @@ function evaluateConnectionGrant(
 interface ToolExecutionMeta {
   executionId: string;
   remoteExecutionId?: string;
+  /** §4.6 custodian receipt id (= `executionId`) when a receipt was minted. */
+  receiptId?: string;
   auditPersisted: boolean;
   connection?: Record<string, unknown>;
 }
@@ -591,6 +597,7 @@ function createExecutionMeta(run: ActionRunResult): ToolExecutionMeta {
   const meta: ToolExecutionMeta = {
     executionId: run.executionId,
     remoteExecutionId: run.remoteExecutionId,
+    receiptId: run.receiptId,
     auditPersisted: run.auditPersisted,
   };
   if (run.connection) {

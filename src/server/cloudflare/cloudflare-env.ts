@@ -28,6 +28,7 @@ export interface CloudflareEnv {
   OOMOL_CONNECT_PACT_ENABLED?: string;
   OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS?: string;
   OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK?: string;
+  OOMOL_CONNECT_PACT_STRICT_RECEIPTS?: string;
 }
 
 export function resolvePublicOrigin(request: Request, env: CloudflareEnv): string {

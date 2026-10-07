@@ -466,6 +466,9 @@ export class ProxyRunner {
     if (code === "provider_error") {
       return 500;
     }
+    if (code === "pact_receipt_invalid") {
+      return 502;
+    }
     if (code === "pact_consent_required") {
       return 202;
     }

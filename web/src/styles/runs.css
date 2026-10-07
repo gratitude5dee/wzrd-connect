@@ -199,3 +199,44 @@
     min-width: 1080px;
   }
 }
+
+.run-receipts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--muted) 62%, var(--card));
+}
+
+.run-receipt-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.run-receipt-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.run-receipt-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.run-receipt-link {
+  font-size: 12px;
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.run-receipt-json {
+  max-height: 220px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}

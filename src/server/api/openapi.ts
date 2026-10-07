@@ -72,6 +72,11 @@ const actionResultMetaSchema = jsonSchema.object(
     }),
     actionId: jsonSchema.string({ description: "Executed action identifier." }),
     auditPersisted: jsonSchema.boolean({ description: "Whether the run audit record was stored." }),
+    approvalId: jsonSchema.string({ description: "Approval that authorized this run, when gated." }),
+    receiptId: jsonSchema.string({
+      description:
+        "Receipt identifier (equals executionId) when a custodian receipt was minted for this run; read it via GET /v1/runs/{executionId}/receipt.",
+    }),
   },
   {
     required: ["executionId", "actionId", "auditPersisted"],
@@ -447,6 +452,7 @@ export function createOpenApiDocument(
     },
     "/api/runs": createRunsPath(),
     "/api/runs/{id}": createRunDetailPath(),
+    "/v1/runs/{executionId}/receipt": createRunReceiptPath(),
     "/v1/approvals/{id}": createApprovalPollPath(),
     "/api/approvals": createApprovalsPath(),
     "/api/approvals/{id}": {
@@ -1057,6 +1063,16 @@ export function createOpenApiDocument(
             },
             errorCode: jsonSchema.string({ description: "Error code when the run failed." }),
             errorMessage: jsonSchema.string({ description: "Error message when the run failed." }),
+            approvalId: jsonSchema.string({
+              description: "Approval that gated this run, when it went through the approval checkpoint.",
+            }),
+            receipt: jsonSchema.string({
+              description:
+                "Custodian receipt: a compact JWS (spec §4.6) minted on every completed run while a deployment PACT identity exists. Verify against GET /.well-known/jwks.json.",
+            }),
+            providerReceipt: jsonSchema.unknownObject(
+              "PACT Brand receipt verification record ({jws, claims, verified, verifiedAt, failureReason?}) for pact action runs.",
+            ),
           },
           {
             required: ["id", "service", "actionId", "caller", "startedAt", "completedAt", "durationMs", "ok"],
@@ -1448,6 +1464,44 @@ function createRunDetailPath(): Record<string, unknown> {
       responses: {
         200: jsonResponse({ $ref: "#/components/schemas/RunLog" }),
         404: jsonResponse({ type: "object", additionalProperties: true }),
+      },
+    },
+  };
+}
+
+function createRunReceiptPath(): Record<string, unknown> {
+  return {
+    get: {
+      tags: ["Runs"],
+      summary: "Read a run's PACT receipts.",
+      description:
+        "Returns the custodian receipt (compact JWS, spec §4.6) and the verified Brand receipt record for a run. " +
+        "Scoped to the bearer that ran it: a stored runtime token sees only its own runs; other callers get 404 run_not_found. " +
+        "Only present while PACT is enabled and a deployment identity exists.",
+      parameters: [
+        {
+          name: "executionId",
+          in: "path",
+          required: true,
+          schema: jsonSchema.string({ description: "Action execution identifier." }),
+        },
+      ],
+      responses: {
+        200: jsonResponse(
+          runtimeSuccessSchema(
+            jsonSchema.object(
+              {
+                receipt: jsonSchema.string({
+                  description: "Custodian receipt JWS; verify against GET /.well-known/jwks.json.",
+                }),
+                providerReceipt: jsonSchema.unknownObject("Brand receipt verification record."),
+              },
+              { description: "Receipt payload for the run." },
+            ),
+          ),
+        ),
+        401: jsonResponse(runtimeFailureSchema()),
+        404: jsonResponse(runtimeFailureSchema(), "run_not_found."),
       },
     },
   };

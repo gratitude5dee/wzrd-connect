@@ -8,6 +8,11 @@ import { crossOriginSafeHeaders, resolveGuardedEgressTarget } from "../core/guar
  */
 export type PactEgressFailure = "invalid_url" | "blocked" | "resolution" | "redirect";
 
+/** Per-call budget on PACT OAuth/JWKS endpoint requests through `pactEgressFetch`. */
+export const pactEgressRequestTimeoutMs: number = 10_000;
+/** PACT OAuth/JWKS endpoint responses are small JSON objects. */
+export const pactEgressMaxBytes: number = 64 * 1024;
+
 export class PactEgressError extends Error {
   readonly reason: PactEgressFailure;
 

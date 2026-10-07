@@ -178,6 +178,53 @@ Run logs for these executions carry `connectionSource: "pact"`, and
 delegation grant commits) and `pact.needsReauthorization` when the grant needs
 fresh consent.
 
+## Receipts
+
+Every completed run mints a **custodian receipt** while a deployment PACT
+identity exists — a compact JWS signed under the current identity key,
+published for verification via `GET /.well-known/jwks.json`. Runs also capture
+a **Provider receipt** when a Brand reply carries
+`metadata["pact.receipt"] = {jws, claims}`. Neither is returned inline in the
+action response beyond `meta.receiptId` (which equals the `executionId`).
+
+Custodian receipt claims:
+
+- `iss` = the Connect issuer; `sub` = the caller's token subject (or the
+  deployment subject); `act` = the runtime token id or the caller kind
+  (`bootstrap` | `jwt` | `admin` | `dev`); `aud` = the PACT interfaceUrl for
+  Brand runs, else the action's service id; `jti` = the execution id; `iat`.
+- `action` = `{id, operationType, connectionId, inputHash, outcome, errorCode?}`
+  where `inputHash` is SHA-256 over the JCS-canonicalized input
+  (`src/core/json-canonical.ts`, RFC 8785 subset).
+- `approval` = `{approvalId, decidedBy, decidedAt, factor, grantId?}` when the
+  run went through the §4.2 checkpoint.
+- `provider_receipt` = `{grantId, scopesUsed, verified}` for pact runs.
+
+A Brand receipt is checked, in order, for: a complete `{jws, claims}` object,
+payload === claims (byte-identical JCS), a verifiable signature against the
+connection's `jwksUri` (same JWKS cache as delegation: 5 min positive / 60 s
+negative / one `kid`-miss refetch), `claims.grantId` equal to the connection's
+grant, and `claims.pa` equal to the Connect issuer. The result is stored on the
+run log as `providerReceipt = {jws, claims, verified, verifiedAt,
+failureReason?}` with `failureReason` one of `pact_receipt_missing`,
+`pact_receipt_malformed`, `pact_receipt_payload_mismatch`,
+`pact_receipt_jwks_unavailable`, `pact_receipt_signature_invalid`,
+`pact_receipt_grant_mismatch`, or `pact_receipt_issuer_mismatch`.
+
+Verification failure never fails the action by default — the Brand's action
+already happened. `OOMOL_CONNECT_PACT_STRICT_RECEIPTS=true` turns it into
+`502 pact_receipt_invalid`; the run still records the rejected receipt and a
+custodian receipt with `outcome: "error"`.
+
+Read a run's receipts via `GET /api/runs/:id` (console) or
+`GET /v1/runs/:executionId/receipt` — the latter is scoped to the bearer that
+ran it (a stored runtime token sees only its own runs; anything else answers
+`404 run_not_found`). Receipts live and die with the run row: run-log
+retention deletes them. The Console runs page shows the approval link, the
+custodian receipt (decoded claims plus a client-side **verify** button that
+checks the JWS against the published JWKS), and the Provider receipt's
+verified state.
+
 ## Runtime token subjects
 
 Every runtime token carries a stable `subject` claim so verifiers can
