@@ -411,7 +411,10 @@ describe("PACT step-up", () => {
     expect(details.status).toBeUndefined();
     expect(details.contextId).toBe("ctx-step");
     expect(details.missingScopes).toEqual(["orders:cancel"]);
-    expect(details.verificationUriComplete).toBe("https://provider.example.com/device?user_code=step-1");
+    // PACT §5.5: the agent's own device-flow link wins over the task's
+    // pact.verificationUriComplete — on the reference Provider that link binds
+    // to a Provider-created device code Connect cannot poll.
+    expect(details.verificationUriComplete).toBe(`https://provider.example.com/device?user_code=${details.userCode}`);
     const stepUpRequestId = details.connectionRequestId as string;
 
     // The new device request asked for the union of granted + missing scopes.

@@ -79,7 +79,12 @@ export interface PactDeviceStartInput {
   missingScopes?: string[];
   /** Step-up only: conversation the retried message should rejoin. */
   contextId?: string;
-  /** Provider-supplied link wins over `verification_uri_complete` (spec §4.5). */
+  /**
+   * Step-up only: the link the task's `pact.verificationUriComplete` supplied.
+   * Used only when the device response omits `verification_uri_complete` — the
+   * reference Provider binds the task link to a Provider-owned device code the
+   * agent cannot poll, so PACT §5.5 makes the agent's own §5.3 link win.
+   */
   verificationUriComplete?: string;
   /** PA-JWT `sub`; defaults to the deployment subject. */
   subject?: string;
@@ -189,7 +194,7 @@ export class PactDelegationService {
       missingScopes: input.missingScopes,
       contextId: input.contextId,
       verificationUri: optionalString(body.verification_uri),
-      verificationUriComplete: input.verificationUriComplete ?? optionalString(body.verification_uri_complete),
+      verificationUriComplete: optionalString(body.verification_uri_complete) ?? input.verificationUriComplete,
       userCode: optionalString(body.user_code),
     };
     await this.options.requests.createPact(pending);
@@ -199,8 +204,11 @@ export class PactDelegationService {
   /**
    * Step-up on `TASK_STATE_AUTH_REQUIRED` (spec §4.5): request the union of the
    * Brand-reported missing ids and the currently granted ids so the new grant
-   * is a superset, and keep the provider-supplied verification link when one
-   * exists. `contextId` lets the agent retry the same message afterwards.
+   * is a superset. The device response's own `verification_uri_complete` is
+   * shown (PACT §5.5 repeats §5.3); the task's `pact.verificationUriComplete`
+   * is only a fallback, since on the reference Provider it is bound to a
+   * Provider-created device authorization the agent cannot poll. `contextId`
+   * lets the agent retry the same message afterwards.
    */
   async startStepUp(
     connection: StoredPactConnection,

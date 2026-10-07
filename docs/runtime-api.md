@@ -456,6 +456,24 @@ Decisions are atomic: the first decide call on a pending record wins, later ones
 `execute_action` and poll with the `get_approval` tool (when the approvals store is configured);
 there is intentionally no MCP approve tool — deciding is an admin-only act.
 
+### One Step-Up, Three Encodings
+
+Approvals and PACT consent share one caller loop: hand the link to whoever acts, poll `pollUrl`
+until it stops returning `202`, then retry the original call.
+
+| Event                                                    | HTTP `/v1`                                                         | MCP `execute_action` result                                                                              | Who acts                        |
+| -------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Human approval needed in Connect                         | `202 approval_required` + `pollUrl`, `approvalUrl`                 | `{ status: "approval_required", approvalId, pollWith: "get_approval", approvalUrl }`                     | An admin, in the Console        |
+| Brand consent needed (PACT step-up or first delegation)  | `202 pact_consent_required` + `verificationUriComplete`, `pollUrl` | `{ status: "consent_required", connectionRequestId, verificationUriComplete, pollWith: "get_approval" }` | The person, on the Brand's page |
+| Provider says `AUTH_REQUIRED` for scopes not yet granted | same as above, `missingScopes` listed                              | same                                                                                                     | The person                      |
+
+On `pact_consent_required` the retry posts the same `input` — with `input.contextId` from the
+pause payload when one was returned — after the connection request reaches `connected`. On
+`approval_required` the first post-approval poll executes the stored request itself, so there is
+nothing to resend. Retrying an action while its PACT consent request is still pending starts a
+new request and supersedes the pending one: poll the `connectionRequestId` already held to a
+terminal state first.
+
 ## Action Guides
 
 Each Action has a local markdown guide that includes the input schema, scopes, provider
@@ -496,6 +514,10 @@ by age.
 - `POST /v1/actions/:actionId`
 - `GET /v1/approvals/:id` — poll an approval the caller created; approval-gated requests execute on
   the first post-approval poll (see Approval Checkpoints)
+- `POST /v1/connections/pact/connect` — connect a PACT Brand (identity-only, or start the device
+  flow when `scopes` are requested); PACT-enabled deployments only
+- `GET /v1/connection-requests/:id` — existing connection-request poll; for `kind: "pact"` requests
+  it also drives token-endpoint polling at the provider's advertised interval
 - `GET /v1/runs/:executionId/receipt` — read a run's PACT receipts; scoped to the bearer that ran it
 - `GET /v1/apps`
 - `GET /v1/apps/services/:service`
@@ -576,6 +598,13 @@ These endpoints power the Web Console, examples, and setup scripts:
 - `POST /api/runtime-tokens`
 - `PUT /api/runtime-tokens/:id`
 - `DELETE /api/runtime-tokens/:id`
+- `POST /api/runtime-tokens/:id/rotate-subject` — mint a fresh PACT caller `subject` without
+  revoking the token
+- `GET /api/pact/identity`, `POST /api/pact/identity`, `POST /api/pact/identity/rotate`,
+  `POST /api/pact/identity/registration-token` — deployment identity lifecycle (PACT only)
+- `GET /api/pact/registrations`, `POST /api/pact/registrations`,
+  `PUT /api/pact/registrations/:id`, `DELETE /api/pact/registrations/:id` — trusted Brand origins
+- `POST /api/pact/brands/preview` — fetch and validate an agent card before connecting
 - `GET /api/runtime-policy`
 - `PUT /api/runtime-policy`
 - `GET /api/runs`
@@ -598,4 +627,8 @@ Action execution responses include `meta.executionId`, `meta.actionId`, and `met
 has started. `auditPersisted: false` means the action result is valid but its audit record could not be stored.
 While PACT is enabled and a deployment identity exists, completed runs also carry `meta.receiptId` (equal to the
 `executionId`): fetch the custodian receipt JWS and any Brand receipt via `GET /v1/runs/:executionId/receipt`
+
+PACT-enabled deployments also publish `GET /.well-known/jwks.json` and
+`GET /.well-known/openid-configuration` unauthenticated so Brand verifiers can fetch Connect's
+signing keys.
 (see [docs/pact.md](pact.md#receipts)).

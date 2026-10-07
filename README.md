@@ -72,6 +72,23 @@ handing provider credentials to the agent process.
 - Teams that want hosted auth for speed while keeping a path to private or self-hosted runtime
   control.
 
+## Approvals, PACT Delegation, And Receipts
+
+An opt-in custody and policy layer for personal-agent deployments, off by default:
+
+- **Approval checkpoints** pause any gated Action or proxy call before the provider is reached
+  (`202 approval_required`); an admin decides in the Console and the caller's next poll executes
+  once. Presets cover gated writes or destructive calls only; grants let repeats skip review.
+- **PACT 1.0 Brand connections** (`OOMOL_CONNECT_PACT_ENABLED=true`) publish a deployment JWKS,
+  sign PA-JWT identity tokens, connect Brand agent cards identity-only or through the RFC 8628
+  device flow, and step up for extra scopes mid-conversation.
+- **Receipts** record every run: the Brand's signed receipt is verified against its JWKS and a
+  custodian receipt JWS per run verifies against Connect's.
+
+See [docs/pact.md](docs/pact.md) for concepts, setup, consent and step-up handling, and security
+notes; [docs/runtime-api.md](docs/runtime-api.md) for the `/v1` pause encodings; and
+`examples/pact-brand-chat.ts` for a runnable end-to-end loop.
+
 ## Developer Tools
 
 | Tool                                                        | Purpose                                                                                                                                                                 |

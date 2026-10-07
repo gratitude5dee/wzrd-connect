@@ -11,6 +11,34 @@ Personal Agent JWTs (PA-JWTs) that Brand verifiers can check against that JWKS.
 Brand registrations record which provider origins Connect trusts and which
 audience PA-JWTs are minted for.
 
+## Concepts
+
+PACT defines four parties:
+
+- The **Provider** hosts one or more Brands' support agents behind an A2A
+  interface and an OAuth authorization server.
+- The **Brand** is the business whose account data a Provider serves.
+- The **personal agent** is the platform acting for the person — here, this
+  Connect deployment. It proves itself with PA-JWTs a Provider verifies against
+  the deployment JWKS.
+- The **User** is the person who consents on the Brand's own page. Connect never
+  proxies, frames, or observes that login.
+
+The artifacts Connect manages:
+
+- **Deployment identity** — the ES256 key pair and stable `sub` claim behind
+  `/.well-known/jwks.json`; every PA-JWT Connect signs carries it.
+- **Brand registration** — a trusted Provider origin plus the `aud` PA-JWTs are
+  minted for. A Brand cannot be connected until its origin is registered.
+- **Brand connection** — a `source: "pact"` connection built from the agent
+  card: card facts and OAuth endpoints only, no tokens. It answers the four
+  `pact.*` catalog actions.
+- **Delegation grant** — the RFC 8628 device-flow result: access + refresh
+  tokens, `grantedScopes`, expiry, stored under the connection's encrypted
+  credential. It is what turns an identity-only connection into a delegated one.
+- **Receipts** — the Provider's signed reply receipt and Connect's own custodian
+  receipt per run. See [Receipts](#receipts).
+
 ## Setup
 
 ```bash
@@ -129,7 +157,11 @@ observes the Brand login.
    service reads `pact.missingScopes` + `pact.verificationUriComplete` from the
    task, requests the union of missing and already-granted scopes, and returns
    the consent payload with the task's `contextId`. Retrying the same message
-   after consent re-sends in the same context.
+   after consent re-sends in the same context. The payload shows the device
+   response's own `verification_uri_complete` — on the reference Provider the
+   task's link binds to a Provider-created device code Connect cannot poll, so
+   PACT §5.5 gives Connect's own §5.3 link precedence and treats the task link
+   as a fallback only.
 
 Disconnects attempt RFC 7009 revocation best-effort: when the Provider metadata
 advertises `revocation_endpoint`, Connect posts the refresh token there (or the
@@ -158,8 +190,9 @@ Response and error mapping:
   `text/plain` parts.
 - `{task}` with `TASK_STATE_AUTH_REQUIRED` → step-up: the service starts a
   device flow for the union of `pact.missingScopes` and already-granted scopes
-  and answers `202 pact_consent_required` with the consent payload (including
-  the task's `contextId` and `pact.verificationUriComplete` when sent).
+  and answers `202 pact_consent_required` with the consent payload (the device
+  flow's own `verificationUriComplete`, plus the task's `contextId` and
+  `missingScopes`).
 - A2A error envelopes map on `error.details[0].reason`:
   `INVALID_PARAMS`/`CONTENT_TYPE_NOT_SUPPORTED` → `400 invalid_input`;
   `UNSUPPORTED_OPERATION` → `409 pact_context_closed` when a `contextId` was
@@ -177,6 +210,55 @@ Run logs for these executions carry `connectionSource: "pact"`, and
 `list_connections` reports `source: "pact"` with `identityOnly` (true until a
 delegation grant commits) and `pact.needsReauthorization` when the grant needs
 fresh consent.
+
+## Approval policy and presets
+
+`pact.send_message` and `pact.request_scopes` are `write` operations, so every
+approval layer applies to them like any other Action: a policy that gates
+writes pauses the Brand call until an admin approves, before any PACT traffic
+reaches the Provider.
+
+The Console policy editor (Access → runtime policy → Approvals, or a persistent
+token's overrides) ships two presets:
+
+- **Gated** — `requireApprovalOperations: ["write", "destructive"]`. Every PACT
+  send and scope request pauses for admin approval.
+- **Destructive only** — `requireApprovalOperations: ["destructive"]`. PACT
+  reads run freely; writes run freely too unless an action rule gates them.
+
+`approvalRequiredActions` / `approvalExemptActions` accept the same action-rule
+syntax as the other policy lists — `pact.send_message` can be gated alone while
+`pact.get_delegation` stays exempt, and tokens can widen but never exempt.
+
+## Handling pauses as an agent author
+
+Both Connect's approval checkpoint and the PACT consent flow pause the caller
+with HTTP `202` plus a `pollUrl`. Handle them the same way: hand the person the
+link, poll until the answer is not `202`, then retry the original call.
+
+- `approval_required` → `data.approvalId`, `data.approvalUrl` (Console deep
+  link). Poll `GET /v1/approvals/:id`; the first poll after approval **executes**
+  the stored request and returns the action result. An admin decides — the agent
+  cannot approve itself.
+- `pact_consent_required` → `data.connectionRequestId`,
+  `data.verificationUriComplete`, `data.userCode`, `data.missingScopes`,
+  `data.contextId`. Poll `GET /v1/connection-requests/:id`; a `200` means the
+  grant committed (`status: "connected"`). Then retry `pact.send_message` with
+  the same `input.contextId` so the Brand rejoins the same conversation.
+- Poll slower than `Retry-After` (and never faster than the provider-minted
+  interval Connect enforces). Retrying the action while a consent request is
+  still pending starts a **new** request and supersedes the old one — always
+  poll the `connectionRequestId` you already hold to a terminal state first.
+- `pact_consent_denied` (403) and `pact_consent_expired` (410) are terminal:
+  surface them to the person and let them restart the flow.
+- Over MCP, `execute_action` returns the same pauses as structured tool results
+  (`{status: "approval_required", pollWith: "get_approval"}` or
+  `{status: "consent_required", connectionRequestId, ...}`); poll with the
+  `get_approval` tool. There is intentionally no approve tool.
+
+See the `One step-up, three encodings` table in
+[docs/runtime-api.md](runtime-api.md) and the worked loop in
+[examples/pact-brand-chat.ts](../examples/pact-brand-chat.ts).
 
 ## Receipts
 
@@ -224,6 +306,32 @@ retention deletes them. The Console runs page shows the approval link, the
 custodian receipt (decoded claims plus a client-side **verify** button that
 checks the JWS against the published JWKS), and the Provider receipt's
 verified state.
+
+## Security notes
+
+- **Egress is SSRF-guarded and HTTPS-only.** Card fetches, device/token calls,
+  and `message:send` all go through the shared guarded fetch (≤3 re-validated
+  redirects, byte caps, timeouts). `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK`
+  exists for local development only — never set it in production.
+- **Secrets never leave the box.** PA-JWTs, delegation access/refresh tokens,
+  device codes, and the private JWK are stored with the credential secret codec
+  and are absent from API responses, run summaries, and log lines; run-log
+  redaction covers them. `GET /api/pact/identity` returns only public material.
+- **Token lifetimes are short.** PA-JWTs live 120 s; registration tokens are
+  one-shot and ≤300 s. The delegation access token is verified as a JWT at
+  commit time (issuer JWKS, `aud`, `client_id`, `exp`) before it is stored.
+- **Delegation tokens post to one origin.** `X-A2A-User-Delegation` is attached
+  only to requests on the card's exact `interfaceUrl` origin.
+- **Only the request owner polls a consent request**, and only the caller that
+  created an approval can poll it. Admins decide approvals in the Console; there
+  is no agent-facing approve route or MCP tool.
+- **Receipts are evidence, not gating.** A failed Provider-receipt check logs
+  `failureReason` but does not fail the run unless
+  `OOMOL_CONNECT_PACT_STRICT_RECEIPTS=true`, because the Brand's action already
+  happened.
+- **The private key is encrypted at rest** under `OOMOL_CONNECT_ENCRYPTION_KEY`;
+  rotation keeps the previous key in the JWKS for
+  `OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS` so in-flight PA-JWTs keep verifying.
 
 ## Runtime token subjects
 
