@@ -216,9 +216,7 @@ export class ConnectServer {
       // is a precomputed catalog byte string, and re-gzipping it on every
       // request exceeds the Workers CPU budget (503s observed live).
       const gzip = compress();
-      app.use("/api/*", (context, next) =>
-        context.req.path === "/api/actions" ? next() : gzip(context, next),
-      );
+      app.use("/api/*", (context, next) => (context.req.path === "/api/actions" ? next() : gzip(context, next)));
     }
     app.use("*", createLocalAuthMiddleware(auth));
     if (this.options.marketplace) {

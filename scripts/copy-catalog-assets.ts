@@ -1,5 +1,5 @@
-import type { ProviderDefinition } from "../src/core/types.ts";
 import type { CatalogStore } from "../src/catalog-store.ts";
+import type { ProviderDefinition } from "../src/core/types.ts";
 
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -133,7 +133,10 @@ export async function writeActionsAsset(options: WritePayloadAssetOptions): Prom
   const chunks: string[] = [];
   for (let start = 0; start < body.length; start += actionsChunkBytes) {
     chunks.push(`actions-${chunks.length.toString().padStart(4, "0")}.json`);
-    await writeFile(join(options.targetDir, chunks[chunks.length - 1]!), body.subarray(start, start + actionsChunkBytes));
+    await writeFile(
+      join(options.targetDir, chunks[chunks.length - 1]!),
+      body.subarray(start, start + actionsChunkBytes),
+    );
   }
   const index: ActionsAssetIndex = { version: 1, etag, bytes: body.length, chunks };
   await writeFile(join(options.targetDir, actionsIndexFileName), `${JSON.stringify(index)}\n`);

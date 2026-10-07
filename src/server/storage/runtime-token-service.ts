@@ -1,5 +1,5 @@
 import type { TokenPolicy } from "../../core/action-policy.ts";
-import type { RuntimeLogger } from "../../core/types.ts";
+import type { ActionOperationType, RuntimeLogger } from "../../core/types.ts";
 
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 
@@ -12,6 +12,8 @@ export interface RuntimeTokenRecord {
   allowedProxies: string[];
   allowedConnections: string[];
   allowedTriggers?: string[];
+  requireApprovalOperations?: ActionOperationType[];
+  approvalRequiredActions?: string[];
   createdAt: string;
   lastUsedAt?: string;
 }
@@ -24,6 +26,8 @@ export interface RuntimeTokenSummary {
   allowedProxies: string[];
   allowedConnections: string[];
   allowedTriggers?: string[];
+  requireApprovalOperations?: ActionOperationType[];
+  approvalRequiredActions?: string[];
   createdAt: string;
   lastUsedAt?: string;
 }
@@ -77,6 +81,8 @@ export class RuntimeTokenService {
       allowedProxies: policy.allowedProxies,
       allowedConnections: policy.allowedConnections ?? [],
       allowedTriggers: policy.allowedTriggers ?? [],
+      requireApprovalOperations: policy.requireApprovalOperations,
+      approvalRequiredActions: policy.approvalRequiredActions,
       createdAt: now,
     };
     await this.store.add(record);
@@ -114,6 +120,8 @@ export class RuntimeTokenService {
       allowedProxies: matched.allowedProxies,
       allowedConnections: matched.allowedConnections ?? [],
       allowedTriggers: matched.allowedTriggers ?? [],
+      requireApprovalOperations: matched.requireApprovalOperations,
+      approvalRequiredActions: matched.approvalRequiredActions,
     };
   }
 
@@ -147,6 +155,8 @@ export function summarizeRuntimeToken(record: RuntimeTokenRecord): RuntimeTokenS
     allowedProxies: record.allowedProxies,
     allowedConnections: record.allowedConnections,
     allowedTriggers: record.allowedTriggers ?? [],
+    requireApprovalOperations: record.requireApprovalOperations,
+    approvalRequiredActions: record.approvalRequiredActions,
     createdAt: record.createdAt,
     lastUsedAt: record.lastUsedAt,
   };

@@ -384,7 +384,7 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
         insert into runtime_tokens (
           ${runtimeTokenColumns}
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
       .run(
@@ -396,6 +396,8 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(record.allowedProxies),
         JSON.stringify(record.allowedConnections ?? []),
         JSON.stringify(record.allowedTriggers ?? []),
+        JSON.stringify(record.requireApprovalOperations ?? []),
+        JSON.stringify(record.approvalRequiredActions ?? []),
         record.createdAt,
         record.lastUsedAt ?? null,
       );
@@ -430,7 +432,7 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
       .prepare(
         `
         update runtime_tokens
-        set allowed_actions = ?, blocked_actions = ?, allowed_proxies = ?, allowed_connections = ?, allowed_triggers = ?
+        set allowed_actions = ?, blocked_actions = ?, allowed_proxies = ?, allowed_connections = ?, allowed_triggers = ?, require_approval_operations = ?, approval_required_actions = ?
         where id = ?
         returning ${runtimeTokenColumns}
       `,
@@ -441,6 +443,8 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
         JSON.stringify(policy.allowedProxies),
         JSON.stringify(policy.allowedConnections ?? []),
         JSON.stringify(policy.allowedTriggers ?? []),
+        JSON.stringify(policy.requireApprovalOperations ?? []),
+        JSON.stringify(policy.approvalRequiredActions ?? []),
         id,
       );
     return row ? readRuntimeTokenRow(row) : undefined;

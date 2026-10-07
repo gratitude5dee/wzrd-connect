@@ -146,10 +146,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * exact serialization — a memcpy, not a stringify. The index carries one ETag
  * for the whole body so conditional requests still 304.
  */
-export async function serveActionsFromAssets(
-  assets: AssetsBinding,
-  request: Request,
-): Promise<Response> {
+export async function serveActionsFromAssets(assets: AssetsBinding, request: Request): Promise<Response> {
   const indexResponse = await fetchAsset(assets, `/catalog/${actionsIndexFile}`);
   const indexContentType = indexResponse.headers.get("content-type") ?? "";
   if (!indexResponse.ok || !indexContentType.includes("json")) {
@@ -188,10 +185,7 @@ export async function serveActionsFromAssets(
  * cold-isolate CPU rationale as {@link serveActionsFromAssets}: emitting the
  * body at build time keeps the summary stringify out of every cold isolate.
  */
-export async function serveProvidersFromAssets(
-  assets: AssetsBinding,
-  request: Request,
-): Promise<Response> {
+export async function serveProvidersFromAssets(assets: AssetsBinding, request: Request): Promise<Response> {
   const indexResponse = await fetchAsset(assets, `/catalog/${providersIndexFile}`);
   const indexContentType = indexResponse.headers.get("content-type") ?? "";
   if (!indexResponse.ok || !indexContentType.includes("json")) {

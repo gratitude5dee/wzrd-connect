@@ -60,6 +60,7 @@ describe("SqliteRuntimeDatabase", () => {
       "0015_saas_cleanup_runtime.sql",
       "0016_trigger_policy.sql",
       "0017_trigger_subscriptions.sql",
+      "0018_token_approval_policy.sql",
     ];
     expect(entries.filter((entry) => entry.message === "sqlite migration started")).toEqual(
       migrations.map((migration) => ({ fields: { migration }, message: "sqlite migration started" })),
@@ -774,6 +775,8 @@ describe("SqliteRuntimeDatabase", () => {
       blockedActions: ["github.delete_repository"],
       allowedProxies: ["github"],
       allowedConnections: ["example:work"],
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
     });
     expect(created.token).toMatch(/^oct_/);
     expect(created.record.name).toBe("Claude Desktop");
@@ -790,12 +793,16 @@ describe("SqliteRuntimeDatabase", () => {
       blockedActions: ["github.delete_repository"],
       allowedProxies: ["github"],
       allowedConnections: ["example:work"],
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
     });
     expect(listed?.lastUsedAt).toBeTruthy();
     expect(JSON.stringify(listed)).not.toContain(created.token);
     await expect(tokens.resolveToken(created.token)).resolves.toMatchObject({
       tokenId: created.record.id,
       allowedConnections: ["example:work"],
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
     });
 
     await expect(
@@ -804,6 +811,8 @@ describe("SqliteRuntimeDatabase", () => {
         blockedActions: [],
         allowedProxies: ["slack"],
         allowedConnections: ["example:personal"],
+        requireApprovalOperations: ["read"],
+        approvalRequiredActions: [],
       }),
     ).resolves.toMatchObject({
       allowedActions: ["github.get_current_user"],
@@ -816,6 +825,7 @@ describe("SqliteRuntimeDatabase", () => {
       blockedActions: [],
       allowedProxies: ["slack"],
       allowedConnections: ["example:personal"],
+      requireApprovalOperations: ["read"],
     });
 
     await expect(tokens.revokeToken(created.record.id)).resolves.toBe(true);
@@ -923,6 +933,9 @@ describe("SqliteRuntimeDatabase", () => {
         blockedActions: ["github.delete_repository"],
         allowedProxies: ["github"],
         blockedProxies: [],
+        requireApprovalOperations: ["destructive" as const],
+        approvalRequiredActions: ["github.create_issue"],
+        approvalExemptActions: ["github.get_repo"],
       },
       updatedAt: "2026-07-20T00:00:00.000Z",
     };

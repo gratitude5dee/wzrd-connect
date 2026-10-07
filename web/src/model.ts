@@ -166,6 +166,8 @@ export interface OAuthConfig {
   extra?: Record<string, string>;
 }
 
+export type ApprovalOperationType = "read" | "write" | "destructive";
+
 export interface RuntimeTokenSummary {
   id: string;
   name: string;
@@ -174,6 +176,8 @@ export interface RuntimeTokenSummary {
   allowedProxies: string[];
   allowedTriggers?: string[];
   allowedConnections: string[];
+  requireApprovalOperations?: ApprovalOperationType[];
+  approvalRequiredActions?: string[];
   createdAt: string;
   lastUsedAt?: string;
 }
@@ -185,6 +189,9 @@ export interface PolicyRules {
   allowedTriggers?: string[];
   blockedProxies: string[];
   blockedTriggers?: string[];
+  requireApprovalOperations?: ApprovalOperationType[];
+  approvalRequiredActions?: string[];
+  approvalExemptActions?: string[];
 }
 
 export interface RuntimePolicyState {
@@ -199,11 +206,19 @@ export interface PolicyCheck {
   rule?: string;
 }
 
+export interface ApprovalCheck {
+  source: "deployment" | "runtime" | "token" | "default" | "grant";
+  outcome: "execute" | "approval_required" | "grant";
+  rule?: string;
+  grantId?: string;
+}
+
 export interface PolicyDecision {
   allowed: boolean;
   code?: string;
   message?: string;
   checks: PolicyCheck[];
+  approval?: ApprovalCheck;
 }
 
 export interface RuntimeTokenCreation {

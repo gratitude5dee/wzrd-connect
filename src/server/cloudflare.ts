@@ -5,7 +5,7 @@ import type { ConnectApp } from "./connect-app.ts";
 import type { Logger } from "./logger.ts";
 import type { ISecretCodec } from "./secrets/secret-codec-core.ts";
 
-import { ActionPolicyService, parseActionPolicyList } from "../core/action-policy.ts";
+import { ActionPolicyService, parseActionPolicyList, parseApprovalOperationList } from "../core/action-policy.ts";
 import { PromiseCache } from "../core/promise-cache.ts";
 import {
   parseEgressTrustedHosts,
@@ -17,10 +17,13 @@ import { ProviderLoader } from "../providers/provider-loader.ts";
 import { executorModules } from "../providers/registry.cloudflare.generated.ts";
 import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
 import { isConsoleShellPath } from "./api/console-paths.ts";
-import { loadCatalogFromAssets, serveActionsFromAssets, serveProvidersFromAssets } from "./cloudflare/catalog-assets.ts";
+import {
+  loadCatalogFromAssets,
+  serveActionsFromAssets,
+  serveProvidersFromAssets,
+} from "./cloudflare/catalog-assets.ts";
 import { readPositiveInteger, resolvePublicOrigin } from "./cloudflare/cloudflare-env.ts";
 import { createConnectApp } from "./connect-app.ts";
-
 import { KVTransitFileService } from "./files/kv-transit-files.ts";
 import { R2TransitFileService } from "./files/r2-transit-files.ts";
 import { createWorkerSecretCodec } from "./secrets/worker-secret-codec.ts";
@@ -89,12 +92,10 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
     catalog,
     // `dist/web/catalog/actions-*.json` is emitted by scripts/copy-catalog-assets.ts
     // (the prebuilt /api/actions payload — ~40MB, too big to serialize per request).
-    fetchActionsAsset: (request: Request): Promise<Response> =>
-      serveActionsFromAssets(assets, request),
+    fetchActionsAsset: (request: Request): Promise<Response> => serveActionsFromAssets(assets, request),
     // `dist/web/catalog/provider-summaries.json` is emitted by
     // scripts/copy-catalog-assets.ts — same cold-isolate CPU rationale.
-    fetchProvidersAsset: (request: Request): Promise<Response> =>
-      serveProvidersFromAssets(assets, request),
+    fetchProvidersAsset: (request: Request): Promise<Response> => serveProvidersFromAssets(assets, request),
     providerLoader: new ProviderLoader(executorModules),
     runtimeDatabase: new D1RuntimeDatabase(env.DB, {
       secretCodec,
@@ -128,6 +129,9 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
       blockedProxies: parseActionPolicyList(env.OOMOL_CONNECT_BLOCKED_PROXIES),
       allowedTriggers: parseActionPolicyList(env.OOMOL_CONNECT_ALLOWED_TRIGGERS),
       blockedTriggers: parseActionPolicyList(env.OOMOL_CONNECT_BLOCKED_TRIGGERS),
+      requireApprovalOperations: parseApprovalOperationList(env.OOMOL_CONNECT_REQUIRE_APPROVAL_OPERATIONS),
+      approvalRequiredActions: parseActionPolicyList(env.OOMOL_CONNECT_APPROVAL_REQUIRED_ACTIONS),
+      approvalExemptActions: parseActionPolicyList(env.OOMOL_CONNECT_APPROVAL_EXEMPT_ACTIONS),
     }),
     allowedCustomOAuth: parseActionPolicyList(env.OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH),
     logger: workerLogger,
@@ -191,6 +195,9 @@ function createCacheKey(env: CloudflareEnv, publicOrigin: string): string {
     allowedTriggers: env.OOMOL_CONNECT_ALLOWED_TRIGGERS ?? "",
     blockedTriggers: env.OOMOL_CONNECT_BLOCKED_TRIGGERS ?? "",
     blockedProxies: env.OOMOL_CONNECT_BLOCKED_PROXIES ?? "",
+    requireApprovalOperations: env.OOMOL_CONNECT_REQUIRE_APPROVAL_OPERATIONS ?? "",
+    approvalRequiredActions: env.OOMOL_CONNECT_APPROVAL_REQUIRED_ACTIONS ?? "",
+    approvalExemptActions: env.OOMOL_CONNECT_APPROVAL_EXEMPT_ACTIONS ?? "",
     allowedCustomOAuth: env.OOMOL_CONNECT_ALLOWED_CUSTOM_OAUTH ?? "",
     transitFileTtlSeconds: env.OOMOL_CONNECT_TRANSIT_FILE_TTL_SECONDS ?? "",
     transitFileMaxBytes: env.OOMOL_CONNECT_TRANSIT_FILE_MAX_BYTES ?? "",

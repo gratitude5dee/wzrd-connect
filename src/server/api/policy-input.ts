@@ -1,4 +1,5 @@
 import type { PolicyRules, TokenPolicy } from "../../core/action-policy.ts";
+import type { ActionOperationType } from "../../core/types.ts";
 import type { JsonRequestBody } from "./http-utils.ts";
 
 import { Buffer } from "node:buffer";
@@ -17,6 +18,9 @@ export function readRuntimePolicyRules(body: JsonRequestBody): PolicyRules {
     blockedProxies: readRules(body.blockedProxies, "blockedProxies", "proxy"),
     allowedTriggers: readRules(body.allowedTriggers, "allowedTriggers", "action", true),
     blockedTriggers: readRules(body.blockedTriggers, "blockedTriggers", "action", true),
+    requireApprovalOperations: readApprovalOperations(body.requireApprovalOperations, "requireApprovalOperations"),
+    approvalRequiredActions: readOptionalRules(body.approvalRequiredActions, "approvalRequiredActions"),
+    approvalExemptActions: readOptionalRules(body.approvalExemptActions, "approvalExemptActions"),
   };
 }
 
@@ -27,13 +31,44 @@ export function readTokenPolicy(body: JsonRequestBody, allowOmitted = false): To
   if (body.blockedProxies !== undefined) {
     throw invalidInput("Token policy does not support proxy block rules.");
   }
+  if (body.approvalExemptActions !== undefined) {
+    throw invalidInput("Token policy does not support approval exemption rules.");
+  }
   return {
     allowedActions: readRules(body.allowedActions, "allowedActions", "action", allowOmitted),
     blockedActions: readRules(body.blockedActions, "blockedActions", "action", allowOmitted),
     allowedProxies: readRules(body.allowedProxies, "allowedProxies", "proxy", allowOmitted),
     allowedTriggers: readRules(body.allowedTriggers, "allowedTriggers", "action", true),
     allowedConnections: readConnectionIds(body.allowedConnections, "allowedConnections", allowOmitted),
+    requireApprovalOperations: readApprovalOperations(body.requireApprovalOperations, "requireApprovalOperations"),
+    approvalRequiredActions: readOptionalRules(body.approvalRequiredActions, "approvalRequiredActions"),
   };
+}
+
+function readOptionalRules(value: unknown, fieldName: string): string[] | undefined {
+  return value === undefined ? undefined : readRules(value, fieldName, "action");
+}
+
+function readApprovalOperations(value: unknown, fieldName: string): ActionOperationType[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const values = requiredStringArray(value, fieldName, invalidInput);
+  const operations: ActionOperationType[] = [];
+  for (const item of values) {
+    const operation = item.trim();
+    if (!isApprovalOperation(operation)) {
+      throw invalidInput(`${fieldName} only accepts read, write, and destructive.`);
+    }
+    if (!operations.includes(operation)) {
+      operations.push(operation);
+    }
+  }
+  return operations;
+}
+
+function isApprovalOperation(value: string): value is ActionOperationType {
+  return value === "read" || value === "write" || value === "destructive";
 }
 
 function readRules(value: unknown, fieldName: string, kind: "action" | "proxy", allowOmitted = false): string[] {

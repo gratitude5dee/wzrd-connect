@@ -123,6 +123,41 @@ describe("RuntimeTokenService", () => {
     });
   });
 
+  it("carries approval requirements through create, list, resolve, and update", async () => {
+    const service = new RuntimeTokenService(new MemoryRuntimeTokenStore());
+    const created = await service.createToken("Issue bot", {
+      allowedActions: ["github.*"],
+      blockedActions: [],
+      allowedProxies: ["github"],
+      allowedConnections: [],
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
+    });
+
+    expect(created.record).toMatchObject({
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
+    });
+    await expect(service.listTokens()).resolves.toMatchObject([
+      { id: created.record.id, requireApprovalOperations: ["write", "destructive"] },
+    ]);
+    await expect(service.resolveToken(created.token)).resolves.toMatchObject({
+      tokenId: created.record.id,
+      requireApprovalOperations: ["write", "destructive"],
+      approvalRequiredActions: ["github.create_issue"],
+    });
+    await expect(
+      service.updateTokenPolicy(created.record.id, {
+        allowedActions: [],
+        blockedActions: [],
+        allowedProxies: [],
+        allowedConnections: [],
+        requireApprovalOperations: ["read"],
+        approvalRequiredActions: [],
+      }),
+    ).resolves.toMatchObject({ requireApprovalOperations: ["read"], approvalRequiredActions: [] });
+  });
+
   it("defaults omitted allowedConnections to an unrestricted empty list", async () => {
     const created = await new RuntimeTokenService(new MemoryRuntimeTokenStore()).createToken("Issue bot");
     expect(created.record.allowedConnections).toEqual([]);
@@ -132,6 +167,8 @@ describe("RuntimeTokenService", () => {
       allowedProxies: [],
       allowedConnections: [],
     });
+    expect(created.record.requireApprovalOperations).toBeUndefined();
+    expect(created.record.approvalRequiredActions).toBeUndefined();
   });
 });
 

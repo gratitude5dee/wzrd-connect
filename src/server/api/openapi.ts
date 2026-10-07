@@ -730,6 +730,12 @@ export function createOpenApiDocument(
             allowedConnections: connectionIdArraySchema(
               "Stable connection IDs granted to this stored runtime token. An empty list is unrestricted connection access. IDs are opaque values returned by the connection APIs. Virtual no_auth connections do not require grants.",
             ),
+            requireApprovalOperations: approvalOperationListSchema(
+              "Operation types whose executions require approval for this token. Omitted when the token adds no operation-type approval requirement.",
+            ),
+            approvalRequiredActions: policyRuleArraySchema(
+              "Action rules that always require approval under this token. Omitted when unset.",
+            ),
             createdAt: jsonSchema.string({ description: "Creation timestamp." }),
             lastUsedAt: jsonSchema.string({ description: "Last successful use timestamp." }),
           },
@@ -761,6 +767,12 @@ export function createOpenApiDocument(
             allowedConnections: connectionIdArraySchema(
               "Optional stable connection IDs granted to the new token. Omit or leave empty for unrestricted connection access. A non-empty list matches exact opaque IDs returned by the connection APIs. Virtual no_auth connections do not require grants.",
             ),
+            requireApprovalOperations: approvalOperationListSchema(
+              "Optional operation types whose executions require approval for the new token.",
+            ),
+            approvalRequiredActions: policyRuleArraySchema(
+              "Optional action rules that always require approval under the new token.",
+            ),
           },
           {
             required: ["name"],
@@ -779,6 +791,12 @@ export function createOpenApiDocument(
             ),
             allowedConnections: connectionIdArraySchema(
               "Stable connection IDs granted to this stored token. An empty list is unrestricted connection access. A non-empty list matches exact opaque IDs returned by the connection APIs. Virtual no_auth connections do not require grants.",
+            ),
+            requireApprovalOperations: approvalOperationListSchema(
+              "Operation types whose executions require approval for this token. A token can widen approval requirements but cannot exempt actions.",
+            ),
+            approvalRequiredActions: policyRuleArraySchema(
+              "Action rules that always require approval under this token.",
             ),
           },
           {
@@ -829,10 +847,29 @@ export function createOpenApiDocument(
               maxItems: 3,
               items: { $ref: "#/components/schemas/PolicyCheck" },
             },
+            approval: { $ref: "#/components/schemas/ApprovalCheck" },
           },
           {
             required: ["allowed", "checks"],
-            description: "Layered execution policy decision. code and message are present on denial.",
+            description:
+              "Layered execution policy decision. code and message are present on denial; approval is present only when allowed and approval evaluation ran.",
+          },
+        ),
+        ApprovalCheck: jsonSchema.object(
+          {
+            source: { type: "string", enum: ["deployment", "runtime", "token", "grant", "default"] },
+            outcome: { type: "string", enum: ["execute", "approval_required", "grant"] },
+            rule: jsonSchema.string({
+              description: "Matching policy rule or operation type that produced the outcome.",
+            }),
+            grantId: jsonSchema.string({
+              description: "Consumed approval grant identifier, when a grant authorized execution.",
+            }),
+          },
+          {
+            required: ["source", "outcome"],
+            description:
+              "Approval evaluation result attached to an allowed policy decision. Present only when the caller evaluated approval for the action.",
           },
         ),
         TransitFileUpload: jsonSchema.object(
@@ -1116,12 +1153,35 @@ function policyRulesSchema(): JsonSchema {
       ),
       blockedTriggers: policyRuleArraySchema("Trigger block rules override all grants."),
       blockedProxies: policyRuleArraySchema("Proxy service block rules."),
+      requireApprovalOperations: approvalOperationListSchema(
+        "Operation types that require approval before execution. Evaluated after approval-required rules and before exempt rules.",
+      ),
+      approvalRequiredActions: policyRuleArraySchema(
+        "Action rules that always require approval before execution. Wins over grants and exemptions.",
+      ),
+      approvalExemptActions: policyRuleArraySchema(
+        "Action rules that skip approval requirements. Deployment and runtime layers only; token policies cannot exempt actions.",
+      ),
     },
     {
       required: ["allowedActions", "blockedActions", "allowedProxies", "blockedProxies"],
       description: "One complete action and proxy policy layer.",
     },
   );
+}
+
+function approvalOperationListSchema(description: string): JsonSchema {
+  return {
+    type: "array",
+    maxItems: 3,
+    items: {
+      type: "string",
+      enum: ["read", "write", "destructive"],
+      description:
+        "Operation type. Proxy calls classify as read for GET/HEAD, destructive for DELETE, and write otherwise.",
+    },
+    description,
+  };
 }
 
 function policyRuleArraySchema(description: string): JsonSchema {
