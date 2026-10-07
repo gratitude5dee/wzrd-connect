@@ -16,6 +16,7 @@ import { OAuthClientConfigService } from "../oauth/oauth-client-config-service.t
 import { OAuthCredentialRefreshService } from "../oauth/oauth-credential-refresh-service.ts";
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
 import { PactIdentityService } from "../pact/pact-identity-service.ts";
+import { PactService } from "../pact/pact-service.ts";
 import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
 import { SaasClient } from "../saas/saas-client.ts";
 import { SaasExecutionService } from "../saas/saas-execution-service.ts";
@@ -64,7 +65,7 @@ export interface ConnectPactOptions {
   enabled: boolean;
   /** `OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS` — JWKS grace for the outgoing key after rotation. */
   keyGraceSeconds?: number;
-  /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` — reserved for the outbound PACT client (PR4+). */
+  /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` — permits http://loopback PACT Brand targets (dev only). */
   allowInsecureLoopback?: boolean;
 }
 
@@ -117,6 +118,27 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     logger: options.logger,
     marketplace,
   });
+  const pact = options.pact?.enabled
+    ? (() => {
+        const identity = new PactIdentityService({
+          store: options.runtimeDatabase.pactIdentityStore,
+          secretCodec: options.secretCodec,
+          issuer: options.configuredOrigin,
+          keyGraceSeconds: options.pact!.keyGraceSeconds,
+        });
+        return {
+          identity,
+          registrations: options.runtimeDatabase.pactRegistrationStore,
+          service: new PactService({
+            store: options.runtimeDatabase.connectionStore,
+            registrations: options.runtimeDatabase.pactRegistrationStore,
+            identity,
+            allowInsecureLoopback: options.pact!.allowInsecureLoopback,
+            logger: options.logger,
+          }),
+        };
+      })()
+    : undefined;
   const actions = new ActionRunner({
     providerHttpDispatch: options.providerHttpDispatch,
     catalog: options.catalog,
@@ -127,6 +149,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     transitFiles: options.transitFiles,
     logger: options.logger,
     marketplace,
+    pact: pact?.service,
   });
 
   const triggers = new TriggerRunner({
@@ -149,17 +172,6 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     ttlSeconds: options.approvalTtlSeconds,
     logger: options.logger,
   });
-  const pact = options.pact?.enabled
-    ? {
-        identity: new PactIdentityService({
-          store: options.runtimeDatabase.pactIdentityStore,
-          secretCodec: options.secretCodec,
-          issuer: options.configuredOrigin,
-          keyGraceSeconds: options.pact.keyGraceSeconds,
-        }),
-        registrations: options.runtimeDatabase.pactRegistrationStore,
-      }
-    : undefined;
   return {
     triggerMaintenance,
     approvalMaintenance: new ApprovalMaintenance({ service: approvals, logger: options.logger }),

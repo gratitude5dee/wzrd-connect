@@ -1,4 +1,4 @@
-import type { IConnectionStore, StoredConnection } from "../connection-service.ts";
+import type { IConnectionStore, StoredConnection, StoredPactConnection } from "../connection-service.ts";
 import type {
   ActionExecutor,
   CredentialValidators,
@@ -6,6 +6,7 @@ import type {
   ProviderDefinition,
   ResolvedCredential,
 } from "../core/types.ts";
+import type { PactConnectionCredential } from "../pact/pact-connection.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { ISecretCodec } from "../server/secrets/secret-codec-core.ts";
 import type { IOAuthClientConfigStore, OAuthClientConfig } from "./oauth-client-config-service.ts";
@@ -1323,6 +1324,20 @@ class MemoryConnectionStore implements IConnectionStore {
       id: this.store.get(key)?.id ?? crypto.randomUUID(),
       revision: crypto.randomUUID(),
       service,
+      connectionName,
+      credential,
+    };
+    this.store.set(key, connection);
+    return connection;
+  }
+
+  async setPactConnection(connectionName: string, credential: PactConnectionCredential): Promise<StoredPactConnection> {
+    const key = createConnectionKey("pact", connectionName);
+    const connection: StoredPactConnection = {
+      source: "pact",
+      id: this.store.get(key)?.id ?? crypto.randomUUID(),
+      revision: crypto.randomUUID(),
+      service: "pact",
       connectionName,
       credential,
     };

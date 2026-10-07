@@ -30,10 +30,14 @@ describe("provider error codes", () => {
       "authorization_failed",
       "insufficient_credit",
       "invalid_input",
+      "pact_consent_required",
+      "pact_context_closed",
+      "pact_provider_unavailable",
+      "pact_unauthorized",
       "provider_error",
       "rate_limited",
     ]);
-    expect(providerErrorCodes.map(actionStatusFor)).toEqual([403, 402, 400, 500, 429]);
+    expect(providerErrorCodes.map(actionStatusFor)).toEqual([403, 402, 400, 202, 409, 502, 401, 500, 429]);
   });
 
   it("leaves the connection and dispatch codes out of a provider's reach", () => {

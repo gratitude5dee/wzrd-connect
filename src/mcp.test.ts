@@ -1,6 +1,7 @@
-import type { IConnectionStore, StoredConnection } from "./connection-service.ts";
+import type { IConnectionStore, StoredConnection, StoredPactConnection } from "./connection-service.ts";
 import type { ActionPolicySnapshot } from "./core/action-policy.ts";
 import type { ActionDefinition, ActionExecutor, ProviderDefinition, ResolvedCredential } from "./core/types.ts";
+import type { PactConnectionCredential } from "./pact/pact-connection.ts";
 import type { IProviderLoader } from "./providers/provider-loader.ts";
 import type { IRunLogStore, RunLog, RunLogPage } from "./server/storage/runtime-store.ts";
 import type { RuntimeGrant } from "./server/storage/runtime-token-service.ts";
@@ -836,6 +837,20 @@ class MemoryConnectionStore implements IConnectionStore {
       id: this.connections.get(key)?.id ?? crypto.randomUUID(),
       revision: crypto.randomUUID(),
       service,
+      connectionName,
+      credential,
+    };
+    this.connections.set(key, connection);
+    return connection;
+  }
+
+  async setPactConnection(connectionName: string, credential: PactConnectionCredential): Promise<StoredPactConnection> {
+    const key = this.key("pact", connectionName);
+    const connection: StoredPactConnection = {
+      source: "pact",
+      id: this.connections.get(key)?.id ?? crypto.randomUUID(),
+      revision: crypto.randomUUID(),
+      service: "pact",
       connectionName,
       credential,
     };

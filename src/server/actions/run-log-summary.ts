@@ -33,6 +33,14 @@ const safeErrorMessages: Record<string, string> = {
   oauth_source_protocol_error: "SaaS returned an incompatible response.",
   oauth_source_unsupported: "The SaaS connection does not support this action.",
   oauth_source_response_too_large: "The SaaS execution response exceeded the size limit.",
+  pact_consent_required: "The Brand requires user consent for additional scopes.",
+  pact_context_closed: "The Brand closed this conversation context.",
+  pact_provider_unavailable: "The Brand provider is unavailable.",
+  pact_registration_required: "No enabled PACT registration covers this provider.",
+  pact_unauthorized: "The Brand rejected the deployment identity.",
+  pact_card_invalid: "The Brand agent card is invalid.",
+  connection_changed: "The connection changed during reconnect.",
+  provider_unavailable: "PACT execution is disabled on this deployment.",
 };
 
 interface SummaryState {

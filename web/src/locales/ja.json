@@ -982,6 +982,38 @@
         "notes": "メモ",
         "enabled": "有効"
       }
+    },
+    "brands": {
+      "heading": "ブランド",
+      "connect": "ブランドを接続",
+      "connectTitle": "ブランドを接続",
+      "connectDescription": "ブランドのエージェントカードを取得し、要求するスコープを選んで、ID 専用の接続を保存します。",
+      "empty": "ブランド接続がありません",
+      "emptyHint": "ブランドを接続すると、パーソナルエージェントがそのサポートエージェントにメッセージを送れます。",
+      "preview": "カードをプレビュー",
+      "previewFailed": "エージェントカードを取得できませんでした。",
+      "connectFailed": "ブランドを接続できませんでした。",
+      "registered": "登録済み（有効）",
+      "registrationDisabled": "登録は無効です",
+      "notRegistered": "登録なし — 接続は拒否されます",
+      "identityOnly": "ID のみ",
+      "previewFields": {
+        "name": "ブランド",
+        "provider": "プロバイダーオリジン",
+        "interface": "インターフェース URL",
+        "registration": "登録"
+      },
+      "fields": {
+        "cardUrl": "エージェントカード URL またはオリジン",
+        "alias": "接続エイリアス",
+        "scopes": "スコープ"
+      },
+      "columns": {
+        "alias": "エイリアス",
+        "brand": "ブランドオリジン",
+        "interface": "インターフェース",
+        "mode": "モード"
+      }
     }
   }
 }
