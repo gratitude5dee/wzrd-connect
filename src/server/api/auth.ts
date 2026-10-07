@@ -43,6 +43,26 @@ export function readRuntimeGrant(context: Context): RuntimeGrant | undefined {
   return runtimeGrants.get(context.req.raw);
 }
 
+/**
+ * Bearer credential kind recorded by the auth middleware for the §4.6 receipt
+ * `act` claim: `bootstrap` (configured runtime token), `jwt` (verified runtime
+ * JWT), `admin` (admin token or admin session cookie), `dev` (no credential).
+ * Stored-token callers are read back through {@link readRuntimeGrant} instead —
+ * their `act` is the token id.
+ */
+export type RuntimeCallerKind = "bootstrap" | "jwt" | "dev" | "admin";
+
+const callerKinds = new WeakMap<Request, RuntimeCallerKind>();
+
+/** Credential kind for the current request; `dev` when no bearer was presented. */
+export function readRuntimeCallerKind(context: Context): RuntimeCallerKind {
+  return callerKinds.get(context.req.raw) ?? "dev";
+}
+
+function recordCallerKind(context: Context, kind: RuntimeCallerKind): void {
+  callerKinds.set(context.req.raw, kind);
+}
+
 export function createLocalAuthMiddleware(options: LocalAuthOptions): MiddlewareHandler {
   const adminToken = normalizeToken(options.adminToken);
   const runtimeToken = normalizeToken(options.runtimeToken);
@@ -184,18 +204,21 @@ async function hasValidToken(context: Context, options: LocalAuthOptions, scope:
   const token = tokenForScope(options, scope);
   if (!token) {
     if (scope === "admin") {
+      recordCallerKind(context, "dev");
       return true;
     }
     const hasRuntimeTokens = options.hasRuntimeTokens
       ? await options.hasRuntimeTokens()
       : options.resolveRuntimeToken !== undefined;
     if (!hasRuntimeTokens && !options.verifyRuntimeJwt) {
+      recordCallerKind(context, "dev");
       return true;
     }
     return hasValidRuntimeToken(context, options);
   }
 
   if (await hasRequestToken(context, token)) {
+    recordCallerKind(context, scope === "admin" ? "admin" : "bootstrap");
     return true;
   }
 
@@ -299,7 +322,11 @@ async function hasValidRuntimeToken(context: Context, options: LocalAuthOptions)
     runtimeGrants.set(context.req.raw, grant);
     return true;
   }
-  return await (options.verifyRuntimeJwt?.(token) ?? false);
+  if (await (options.verifyRuntimeJwt?.(token) ?? false)) {
+    recordCallerKind(context, "jwt");
+    return true;
+  }
+  return false;
 }
 
 function readBearerToken(context: Context): string | undefined {

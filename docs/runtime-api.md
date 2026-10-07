@@ -496,6 +496,7 @@ by age.
 - `POST /v1/actions/:actionId`
 - `GET /v1/approvals/:id` — poll an approval the caller created; approval-gated requests execute on
   the first post-approval poll (see Approval Checkpoints)
+- `GET /v1/runs/:executionId/receipt` — read a run's PACT receipts; scoped to the bearer that ran it
 - `GET /v1/apps`
 - `GET /v1/apps/services/:service`
 - `GET /v1/apps/authenticated`
@@ -595,3 +596,6 @@ its `executionId` as the stable run ID; `GET /api/runs/:id` returns that single 
 
 Action execution responses include `meta.executionId`, `meta.actionId`, and `meta.auditPersisted` once execution
 has started. `auditPersisted: false` means the action result is valid but its audit record could not be stored.
+While PACT is enabled and a deployment identity exists, completed runs also carry `meta.receiptId` (equal to the
+`executionId`): fetch the custodian receipt JWS and any Brand receipt via `GET /v1/runs/:executionId/receipt`
+(see [docs/pact.md](pact.md#receipts)).

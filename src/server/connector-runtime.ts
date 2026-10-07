@@ -112,8 +112,10 @@ export interface ConnectorPactOptions {
   enabled: boolean;
   /** `OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS` — JWKS grace for the outgoing key after rotation (default 86400). */
   keyGraceSeconds?: number;
-  /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` — reserved for the outbound PACT client (PR4+). */
+  /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` — permits http://loopback PACT Brand targets (dev only). */
   allowInsecureLoopback?: boolean;
+  /** `OOMOL_CONNECT_PACT_STRICT_RECEIPTS` — 502 pact_receipt_invalid on unverified Brand receipts. */
+  strictReceipts?: boolean;
 }
 
 /** Standard web requests are the host boundary; credentials, databases and framework objects stay private. */

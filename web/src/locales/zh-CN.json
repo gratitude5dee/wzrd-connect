@@ -521,6 +521,15 @@
       "timing": "时间",
       "input": "输入",
       "result": "结果"
+    },
+    "viewApproval": "查看审批",
+    "receipts": {
+      "custodian": "托管回执",
+      "provider": "提供方回执",
+      "verify": "验证",
+      "verified": "已验证",
+      "unverified": "未验证",
+      "verifyFailed": "验证失败"
     }
   },
   "access": {

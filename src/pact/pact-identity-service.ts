@@ -168,6 +168,23 @@ export class PactIdentityService {
     return (await this.store.get())?.subject;
   }
 
+  /** The configured Connect issuer (`OOMOL_CONNECT_ORIGIN`) receipts compare `pa` against. */
+  readIssuer(): string | undefined {
+    return this.issuer;
+  }
+
+  /**
+   * Mint a §4.6 custodian receipt as a compact JWS under the active identity
+   * key. Claims arrive caller-assembled (`iss/sub/act/aud/jti/iat/action`,
+   * optional `approval`, `provider_receipt`); the identity only signs.
+   */
+  async signCustodianReceipt(claims: Record<string, unknown>): Promise<string> {
+    const record = await this.requireIdentity();
+    const { importJWK, SignJWT } = await import("jose");
+    const key = await importJWK(record.privateJwk, "ES256");
+    return new SignJWT(claims).setProtectedHeader({ alg: "ES256", kid: record.kid, typ: "JWT" }).sign(key);
+  }
+
   /**
    * Mint a PA-JWT (spec §4.3): `alg=ES256`, `kid`, `iss` the configured
    * origin, `sub` the caller's agent identity, `aud` the registered Brand

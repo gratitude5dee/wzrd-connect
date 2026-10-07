@@ -34,7 +34,18 @@ export interface MockPactProvider {
   readonly oauth: MockPactOAuth;
   /** The JWKS the fixture mints delegation tokens with (public half). */
   signerJwks(): Promise<{ keys: unknown[] }>;
+  /** §5.6 receipt minting on `message:send` replies; mutate `recipe` per test. */
+  readonly receipts: { recipe: MockPactReceiptRecipe };
 }
+
+/** Receipt minting recipe — `valid` is the compliant-Brand default. */
+export type MockPactReceiptRecipe =
+  | "valid"
+  | "none"
+  | "payload_mismatch"
+  | "wrong_grant"
+  | "wrong_issuer"
+  | "bad_signature";
 
 export interface MockPactRequest {
   headers: Record<string, string>;
@@ -65,6 +76,8 @@ export interface MockPactProviderOptions {
   card?: unknown;
   /** Static card served at a redirect source path (see `cardRedirect`). */
   cardRedirect?: { path: string; location: string };
+  /** Starting §5.6 receipt recipe (default `valid`); mutable via `provider.receipts.recipe`. */
+  receiptRecipe?: MockPactReceiptRecipe;
 }
 
 /** Device-flow knobs the fixture exposes (spec Appendix B). */
@@ -101,6 +114,7 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
   const origin = options.origin ?? "https://provider.example.com";
   const interfacePath = options.interfacePath ?? "/a2a";
   const interfaceUrl = `${origin}${interfacePath}`;
+  const receipts = { recipe: options.receiptRecipe ?? ("valid" as const) };
   const requests: MockPactRequest[] = [];
   const verifiedTokens: Record<string, unknown>[] = [];
   let verifierJwks: { keys: unknown[] } | undefined;
@@ -134,6 +148,54 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
     }
     return signerKey;
   };
+  /** Decode the payload of an inbound JWT header value; undefined when absent. */
+  const readJwtPayload = (value: string | undefined): Record<string, unknown> | undefined => {
+    const token = value?.startsWith("Bearer ") ? value.slice(7) : value;
+    const parts = token?.split(".");
+    if (!parts || parts.length !== 3) {
+      return undefined;
+    }
+    try {
+      const payload: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
+      return typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  /**
+   * §5.6: mint `metadata["pact.receipt"]` for a completed reply. Claims carry
+   * `pa` (the Connect issuer, read off the inbound PA-JWT `iss`), the
+   * delegation `grantId` + scopes (off the inbound `X-A2A-User-Delegation`),
+   * and `iat`; the JWS payload is the same object. `bad_signature` corrupts
+   * the signature segment so verification against the served JWKS fails.
+   */
+  const mintReceipt = async (
+    headers: Record<string, string>,
+  ): Promise<{ jws: string; claims: Record<string, unknown> } | undefined> => {
+    if (receipts.recipe === "none") {
+      return undefined;
+    }
+    const paJwt = readJwtPayload(headers["authorization"]);
+    const delegation = readJwtPayload(headers[pactDelegationHeader.toLowerCase()]);
+    const claims: Record<string, unknown> = {
+      pa: receipts.recipe === "wrong_issuer" ? `${String(paJwt?.iss ?? "")}.evil` : paJwt?.iss,
+      grantId: receipts.recipe === "wrong_grant" ? `grant-other-${crypto.randomUUID()}` : delegation?.grant_id,
+      scopes: typeof delegation?.scope === "string" ? delegation.scope.split(" ").filter(Boolean) : [],
+      iat: Math.floor(Date.now() / 1000),
+    };
+    const key = await ensureSignerKey();
+    const { SignJWT } = await import("jose");
+    let jws = await new SignJWT(claims).setProtectedHeader({ alg: "ES256", kid: "mock-brand-1" }).sign(key.privateKey);
+    if (receipts.recipe === "bad_signature") {
+      jws = `${jws.slice(0, -4)}AAAA`;
+    }
+    return {
+      jws,
+      claims: receipts.recipe === "payload_mismatch" ? { ...claims, tampered: true } : claims,
+    };
+  };
+
   const mintToken = async (input: { clientId: string; scope: string; expiresIn: number }): Promise<string> => {
     const key = await ensureSignerKey();
     const { SignJWT } = await import("jose");
@@ -297,6 +359,7 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
       return a2aError(context, behavior.status, behavior.reason ?? "INTERNAL_ERROR", behavior.message);
     }
     if (behavior?.kind === "task") {
+      const receipt = behavior.state !== "TASK_STATE_AUTH_REQUIRED" ? await mintReceipt(headers) : undefined;
       return context.json({
         task: {
           id: `task-${crypto.randomUUID()}`,
@@ -305,11 +368,13 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
           metadata: {
             "pact.missingScopes": behavior.missingScopes ?? [],
             "pact.verificationUriComplete": behavior.verificationUriComplete,
+            ...(receipt ? { "pact.receipt": receipt } : {}),
           },
         },
       });
     }
     const message = optionalMessageRecord(body);
+    const receipt = await mintReceipt(headers);
     return context.json({
       message: {
         messageId: `reply-${crypto.randomUUID()}`,
@@ -319,6 +384,7 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
             : (message?.contextId ?? `ctx-${crypto.randomUUID()}`),
         role: "ROLE_AGENT",
         parts: [{ text: behavior?.kind === "reply" ? (behavior.text ?? "ok") : "ok", mediaType: "text/plain" }],
+        ...(receipt ? { metadata: { "pact.receipt": receipt } } : {}),
       },
     });
   });
@@ -361,6 +427,7 @@ export function createMockPactProvider(options: MockPactProviderOptions = {}): M
       expectedAudience = audience;
     },
     oauth,
+    receipts,
     async signerJwks(): Promise<{ keys: unknown[] }> {
       const key = await ensureSignerKey();
       return { keys: [key.publicJwk] };

@@ -145,6 +145,7 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
       enabled: parseBooleanFlag(env.OOMOL_CONNECT_PACT_ENABLED),
       keyGraceSeconds: readPositiveInteger(env.OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS, 86_400),
       allowInsecureLoopback: parseBooleanFlag(env.OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK),
+      strictReceipts: parseBooleanFlag(env.OOMOL_CONNECT_PACT_STRICT_RECEIPTS),
     },
     logger: workerLogger,
     computeRuntimeAuthConfigured: false,
@@ -218,6 +219,7 @@ function createCacheKey(env: CloudflareEnv, publicOrigin: string): string {
     pactEnabled: env.OOMOL_CONNECT_PACT_ENABLED ?? "",
     pactKeyGraceSeconds: env.OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS ?? "",
     pactAllowInsecureLoopback: env.OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK ?? "",
+    pactStrictReceipts: env.OOMOL_CONNECT_PACT_STRICT_RECEIPTS ?? "",
   });
 }
 

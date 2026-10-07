@@ -13,6 +13,7 @@ import type {
 import type { IOAuthClientConfigStore, OAuthClientConfig } from "../oauth/oauth-client-config-service.ts";
 import type { IOAuthStateStore, OAuthAuthorizationState } from "../oauth/oauth-flow-service.ts";
 import type { PactConnectionCredential } from "../pact/pact-connection.ts";
+import type { MockPactReceiptRecipe } from "../pact/test/mock-provider.ts";
 import type { IProviderLoader } from "../providers/provider-loader.ts";
 import type { RuntimeActionHttpResult } from "./api/runtime-api.ts";
 import type { RuntimeJwtVerifier } from "./api/runtime-jwt.ts";
@@ -29,6 +30,7 @@ import type { IRunLogStore, RunLog, RunLogListInput, RunLogPage } from "./storag
 import type { IRuntimeTokenStore, RuntimeTokenRecord } from "./storage/runtime-token-service.ts";
 
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,11 +39,13 @@ import { createCatalogStore } from "../catalog-store.ts";
 import { ConnectionService } from "../connection-service.ts";
 import { ActionPolicyService as LocalActionPolicyService } from "../core/action-policy.ts";
 import { buildActionSearchIndex } from "../core/action-search.ts";
+import { canonicalJson } from "../core/json-canonical.ts";
 import { MarketplaceError, MarketplaceService } from "../marketplace/marketplace-service.ts";
 import { OAuthClientConfigService } from "../oauth/oauth-client-config-service.ts";
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
 import { PactDelegationService, pactRequestOwner } from "../pact/pact-delegation-service.ts";
 import { PactIdentityService } from "../pact/pact-identity-service.ts";
+import { PactReceiptService } from "../pact/pact-receipts.ts";
 import { PactService } from "../pact/pact-service.ts";
 import { createMockPactProvider, mockPactDelegationHeader } from "../pact/test/mock-provider.ts";
 import { provider as pactProvider } from "../providers/pact/definition.ts";
@@ -4329,6 +4333,8 @@ interface CreateTestServerOptions {
         issuer?: string;
         keyGraceSeconds?: number;
         allowInsecureLoopback?: boolean;
+        /** `OOMOL_CONNECT_PACT_STRICT_RECEIPTS` — 502 on unverified Brand receipts. */
+        strictReceipts?: boolean;
         /** Injected PACT egress fetcher (test mock Provider — never the network). */
         fetcher?: typeof fetch;
       };
@@ -4390,12 +4396,21 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
         fetcher: typeof options.pact === "object" ? options.pact.fetcher : undefined,
       })
     : undefined;
+  const pactReceipts = options.pact
+    ? new PactReceiptService({
+        identity: pactIdentity!,
+        allowInsecureLoopback: typeof options.pact === "object" ? options.pact.allowInsecureLoopback : true,
+        fetcher: typeof options.pact === "object" ? options.pact.fetcher : undefined,
+      })
+    : undefined;
   const pactService = options.pact
     ? new PactService({
         store: connectionStore,
         registrations: requestDatabase.pactRegistrationStore,
         identity: pactIdentity!,
         delegation: pactDelegation,
+        receipts: pactReceipts,
+        strictReceipts: typeof options.pact === "object" ? options.pact.strictReceipts : undefined,
         allowInsecureLoopback: typeof options.pact === "object" ? options.pact.allowInsecureLoopback : true,
         fetcher: typeof options.pact === "object" ? options.pact.fetcher : undefined,
       })
@@ -4408,6 +4423,8 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
     transitFiles,
     logger: options.logger,
     pact: pactService,
+    receipts: pactReceipts,
+    approvals: options.approvals,
   });
   const staticRoot = typeof options.staticRoot === "string" ? options.staticRoot : undefined;
 
@@ -4449,6 +4466,7 @@ function createTestServer(providers: ProviderDefinition[], options: CreateTestSe
           registrations: requestDatabase.pactRegistrationStore,
           service: pactService!,
           delegation: pactDelegation!,
+          receipts: pactReceipts,
         }
       : undefined,
     logger: options.logger,
@@ -5136,14 +5154,25 @@ describe("ConnectServer PACT Brand connections", () => {
       pact?: boolean;
       actionPolicy?: LocalActionPolicyService;
       verifyJwks?: boolean;
+      strictReceipts?: boolean;
+      receiptRecipe?: MockPactReceiptRecipe;
+      auth?: {
+        adminToken?: string;
+        runtimeToken?: string;
+        verifyRuntimeJwt?: RuntimeJwtVerifier;
+      };
+      runtimeTokens?: RuntimeTokenService;
     } = {},
   ) {
-    const provider = createMockPactProvider();
+    const provider = createMockPactProvider({ receiptRecipe: options.receiptRecipe });
     const runs = new MemoryRunLogStore();
     const database = new SqliteRuntimeDatabase(":memory:");
     requestDatabases.push(database);
-    const server = createTestServer([apiKeyProvider, pactProvider], {
-      pact: options.pact === false ? undefined : { fetcher: provider.fetcher },
+    const server = createTestServer([{ ...apiKeyProvider, actions: [echoAction] }, pactProvider], {
+      pact: options.pact === false ? undefined : { fetcher: provider.fetcher, strictReceipts: options.strictReceipts },
+      auth: options.auth,
+      runtimeTokens: options.runtimeTokens,
+      providerLoader: new ActionProviderLoader(async (input) => ({ ok: true, output: { echoed: input } })),
       secretCodec: new AesGcmSecretCodec("test-encryption-key"),
       runs,
       actionPolicy: options.actionPolicy,
@@ -5180,6 +5209,42 @@ describe("ConnectServer PACT Brand connections", () => {
       }),
     });
     return response;
+  }
+
+  /**
+   * Drive the §4.5 device flow to completion so the Brand connection carries a
+   * delegation credential (grantId + jwksUri) — required for §4.6 receipt
+   * verification, which has no key source on identity-only connections.
+   */
+  async function connectDelegatedBrand(
+    app: { request: (input: string, init?: RequestInit) => Promise<Response> | Response },
+    provider: ReturnType<typeof createMockPactProvider>,
+    scopes: string[] = ["pact:messages"],
+  ) {
+    const connect = await app.request("/v1/connections/pact/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        connectionName: "acme",
+        agentCardUrl: "https://provider.example.com",
+        scopes,
+      }),
+    });
+    expect(connect.status).toBe(202);
+    const consent = (await connect.json()) as { data: { connectionRequestId: string; pollUrl: string } };
+    expect((await app.request(consent.data.pollUrl)).status).toBe(202);
+    provider.oauth.pollScript.push({ kind: "approve", grantedScopes: scopes });
+    const requestDatabase = requestDatabases.at(-1)!;
+    const row = await requestDatabase.connectionRequestStore.readPactRequest(
+      consent.data.connectionRequestId,
+      pactRequestOwner,
+    );
+    expect(row).toBeDefined();
+    await requestDatabase.connectionRequestStore.savePactPending(row!.pending, 0);
+    const connected = await app.request(consent.data.pollUrl);
+    expect(connected.status).toBe(200);
+    await expect(connected.json()).resolves.toMatchObject({ success: true, data: { status: "connected" } });
+    return connected;
   }
 
   it("rejects Brand connects when no registration covers the card origin", async () => {
@@ -5414,5 +5479,293 @@ describe("ConnectServer PACT Brand connections", () => {
     const expired = await app2.request(pollUrl2);
     expect(expired.status).toBe(410);
     await expect(expired.json()).resolves.toMatchObject({ success: false, errorCode: "pact_consent_expired" });
+  });
+
+  it("stores a verified Brand receipt and a verifiable custodian receipt on delegated pact runs", async () => {
+    const { app, provider, runs, verifyJwks } = createBrandApp();
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await verifyJwks();
+    await registerBrand(app);
+    await connectDelegatedBrand(app, provider);
+
+    const run = await app.request("/v1/actions/pact.send_message", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-oo-connector-alias": "acme" },
+      body: JSON.stringify({ input: { text: "where is my order?" } }),
+    });
+    expect(run.status).toBe(200);
+    const runBody = (await run.json()) as { meta: { executionId: string; receiptId?: string } };
+    expect(runBody.meta.receiptId).toBe(runBody.meta.executionId);
+
+    const runLog = (await runs.list()).items.find((item) => item.actionId === "pact.send_message")!;
+    expect(runLog.receipt).toEqual(expect.any(String));
+    // The Brand minted the reply receipt; Connect verified it against the
+    // connection's recorded jwksUri (grant + issuer checks included).
+    expect(runLog.providerReceipt).toMatchObject({
+      verified: true,
+      jws: expect.any(String),
+      claims: expect.objectContaining({
+        pa: "http://localhost:3000",
+        grantId: expect.any(String),
+        scopes: ["pact:messages"],
+      }),
+      verifiedAt: expect.any(String),
+    });
+    expect(runLog.providerReceipt?.failureReason).toBeUndefined();
+
+    // The custodian JWS verifies against the served JWKS and carries the §4.6 claims.
+    const { jwtVerify, createLocalJWKSet } = await import("jose");
+    const servedJwks = (await (await app.request("/.well-known/jwks.json")).json()) as never;
+    const { payload } = await jwtVerify(runLog.receipt!, createLocalJWKSet(servedJwks));
+    expect(payload.iss).toBe("http://localhost:3000");
+    expect(payload.sub).toEqual(expect.any(String));
+    expect(payload.act).toBe("dev");
+    expect(payload.aud).toBe("https://provider.example.com/a2a");
+    expect(payload.jti).toBe(runLog.id);
+    expect(payload.iat).toEqual(expect.any(Number));
+    const action = payload.action as Record<string, unknown>;
+    expect(action.id).toBe("pact.send_message");
+    expect(action.operationType).toBe("write");
+    expect(action.connectionId).toBe(runLog.connectionId);
+    expect(action.outcome).toBe("ok");
+    expect(action.errorCode).toBeUndefined();
+    // inputHash is recomputable from the request input.
+    expect(action.inputHash).toBe(
+      createHash("sha256")
+        .update(canonicalJson({ text: "where is my order?" }))
+        .digest("base64url"),
+    );
+    const providerReceiptClaim = payload.provider_receipt as Record<string, unknown>;
+    expect(providerReceiptClaim.grantId).toBe((runLog.providerReceipt?.claims as { grantId?: string })?.grantId);
+    expect(providerReceiptClaim.scopesUsed).toEqual(["pact:messages"]);
+    expect(providerReceiptClaim.verified).toBe(true);
+
+    // Both surfaces expose the receipts.
+    const apiRun = await app.request(`/api/runs/${runLog.id}`);
+    expect(apiRun.status).toBe(200);
+    await expect(apiRun.json()).resolves.toMatchObject({
+      receipt: runLog.receipt,
+      providerReceipt: { verified: true },
+    });
+    const receiptResponse = await app.request(`/v1/runs/${runLog.id}/receipt`);
+    expect(receiptResponse.status).toBe(200);
+    await expect(receiptResponse.json()).resolves.toMatchObject({
+      success: true,
+      data: { receipt: runLog.receipt, providerReceipt: { verified: true } },
+    });
+    expect((await app.request("/v1/runs/does-not-exist/receipt")).status).toBe(404);
+  });
+
+  it.each([
+    { recipe: "none" as const, failureReason: "pact_receipt_missing" },
+    { recipe: "bad_signature" as const, failureReason: "pact_receipt_signature_invalid" },
+    { recipe: "payload_mismatch" as const, failureReason: "pact_receipt_payload_mismatch" },
+    { recipe: "wrong_grant" as const, failureReason: "pact_receipt_grant_mismatch" },
+    { recipe: "wrong_issuer" as const, failureReason: "pact_receipt_issuer_mismatch" },
+  ])(
+    "marks a $recipe Brand receipt unverified ($failureReason) without failing the run",
+    async ({ recipe, failureReason }) => {
+      const { app, provider, runs, verifyJwks } = createBrandApp({ receiptRecipe: recipe });
+      expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+      await verifyJwks();
+      await registerBrand(app);
+      await connectDelegatedBrand(app, provider);
+
+      const run = await app.request("/v1/actions/pact.send_message", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-oo-connector-alias": "acme" },
+        body: JSON.stringify({ input: { text: "where is my order?" } }),
+      });
+      // Non-strict: the run still succeeds; the failure is recorded on the log.
+      expect(run.status).toBe(200);
+      const runLog = (await runs.list()).items.find((item) => item.actionId === "pact.send_message")!;
+      expect(runLog.providerReceipt).toMatchObject({ verified: false, failureReason });
+      const { jwtVerify, createLocalJWKSet } = await import("jose");
+      const servedJwks = (await (await app.request("/.well-known/jwks.json")).json()) as never;
+      const { payload } = await jwtVerify(runLog.receipt!, createLocalJWKSet(servedJwks));
+      expect((payload.provider_receipt as Record<string, unknown>).verified).toBe(false);
+    },
+  );
+
+  it("fails strict receipt verification with 502 pact_receipt_invalid", async () => {
+    const { app, provider, runs, verifyJwks } = createBrandApp({
+      strictReceipts: true,
+      receiptRecipe: "bad_signature",
+    });
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await verifyJwks();
+    await registerBrand(app);
+    await connectDelegatedBrand(app, provider);
+
+    const run = await app.request("/v1/actions/pact.send_message", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-oo-connector-alias": "acme" },
+      body: JSON.stringify({ input: { text: "where is my order?" } }),
+    });
+    expect(run.status).toBe(502);
+    const body = (await run.json()) as { success: boolean; errorCode: string; data?: { receiptId?: string } };
+    expect(body.errorCode).toBe("pact_receipt_invalid");
+    // The Brand's action already happened; the unverified receipt stays on the run log.
+    const runLog = (await runs.list()).items.find((item) => item.actionId === "pact.send_message")!;
+    expect(runLog.ok).toBe(false);
+    expect(runLog.errorCode).toBe("pact_receipt_invalid");
+    expect(runLog.providerReceipt).toMatchObject({
+      verified: false,
+      failureReason: "pact_receipt_signature_invalid",
+    });
+    // The custodian still receipts the failed run (outcome "error").
+    expect(runLog.receipt).toEqual(expect.any(String));
+  });
+
+  it("mints a custodian receipt on non-pact runs and none when PACT is disabled", async () => {
+    const { app, runs } = createBrandApp();
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await app.request("/api/connections/example", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+
+    const run = await app.request("/v1/actions/example.echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { message: "hello" } }),
+    });
+    expect(run.status).toBe(200);
+    const runLog = (await runs.list()).items.find((item) => item.actionId === "example.echo")!;
+    expect(runLog.providerReceipt).toBeUndefined();
+    expect(runLog.receipt).toEqual(expect.any(String));
+
+    const { jwtVerify, createLocalJWKSet } = await import("jose");
+    const servedJwks = (await (await app.request("/.well-known/jwks.json")).json()) as never;
+    const { payload } = await jwtVerify(runLog.receipt!, createLocalJWKSet(servedJwks));
+    expect(payload.iss).toBe("http://localhost:3000");
+    expect(payload.act).toBe("dev");
+    expect(payload.aud).toBe("example");
+    expect(payload.jti).toBe(runLog.id);
+    const action = payload.action as Record<string, unknown>;
+    expect(action.id).toBe("example.echo");
+    expect(action.outcome).toBe("ok");
+    expect(action.inputHash).toBe(
+      createHash("sha256")
+        .update(canonicalJson({ message: "hello" }))
+        .digest("base64url"),
+    );
+    expect(payload.provider_receipt).toBeUndefined();
+
+    // PACT disabled → no identity → no custodian receipt.
+    const off = createBrandApp({ pact: false });
+    await off.app.request("/api/connections/example", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+    const offRun = await off.app.request("/v1/actions/example.echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { message: "hello" } }),
+    });
+    expect(offRun.status).toBe(200);
+    const offLog = (await off.runs.list()).items.find((item) => item.actionId === "example.echo")!;
+    expect(offLog.receipt).toBeUndefined();
+    expect(offLog.providerReceipt).toBeUndefined();
+  });
+
+  it("carries the §4.2 approval claim on runs minted after an approval", async () => {
+    const { app, runs } = createBrandApp({
+      actionPolicy: new LocalActionPolicyService({ requireApprovalOperations: ["write"] }),
+    });
+    expect((await app.request("/api/pact/identity", { method: "POST" })).status).toBe(200);
+    await app.request("/api/connections/example", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+
+    const created = await app.request("/v1/actions/example.echo", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { message: "hello" } }),
+    });
+    expect(created.status).toBe(202);
+    const { approvalId } = ((await created.json()) as { data: { approvalId: string } }).data;
+    expect(
+      (
+        await app.request(`/api/approvals/${approvalId}/approve`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        })
+      ).status,
+    ).toBe(200);
+    const executed = await app.request(`/v1/approvals/${approvalId}`);
+    expect(executed.status).toBe(200);
+    const { executionId } = ((await executed.json()) as { meta: { executionId: string } }).meta;
+
+    const runLog = (await runs.get(executionId))!;
+    expect(runLog.receipt).toEqual(expect.any(String));
+    const { jwtVerify, createLocalJWKSet } = await import("jose");
+    const servedJwks = (await (await app.request("/.well-known/jwks.json")).json()) as never;
+    const { payload } = await jwtVerify(runLog.receipt!, createLocalJWKSet(servedJwks));
+    const approval = payload.approval as Record<string, unknown>;
+    expect(approval.approvalId).toBe(approvalId);
+    expect(approval.decidedAt).toEqual(expect.any(String));
+    expect(approval.factor).toEqual(expect.any(String));
+    // decidedBy/grantId ride along when the approval record has them.
+    expect(approval.grantId === undefined || typeof approval.grantId === "string").toBe(true);
+  });
+
+  it("scopes GET /v1/runs/:id/receipt to the bearer token that ran it", async () => {
+    const runtimeTokens = new RuntimeTokenService(new MemoryRuntimeTokenStore());
+    const ownerToken = await runtimeTokens.createToken("Owner");
+    const otherToken = await runtimeTokens.createToken("Other");
+    const { app, runs } = createBrandApp({
+      auth: { adminToken: "local-token", runtimeToken: "runtime-token" },
+      runtimeTokens,
+    });
+    expect(
+      (
+        await app.request("/api/pact/identity", {
+          method: "POST",
+          headers: { authorization: "Bearer local-token" },
+        })
+      ).status,
+    ).toBe(200);
+    await app.request("/api/connections/example", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer local-token",
+      },
+      body: JSON.stringify({ authType: "api_key", values: { apiKey: "example-key" } }),
+    });
+
+    const run = await app.request("/v1/actions/example.echo", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${ownerToken.token}`,
+      },
+      body: JSON.stringify({ input: { message: "hello" } }),
+    });
+    expect(run.status).toBe(200);
+    const runLog = (await runs.list()).items.find((item) => item.actionId === "example.echo")!;
+    expect(runLog.receipt).toEqual(expect.any(String));
+    expect(runLog.runtimeTokenId).toBe(ownerToken.record.id);
+
+    // The same token sees the receipt; another token and the bootstrap token do not.
+    const ownerRead = await app.request(`/v1/runs/${runLog.id}/receipt`, {
+      headers: { authorization: `Bearer ${ownerToken.token}` },
+    });
+    expect(ownerRead.status).toBe(200);
+    await expect(ownerRead.json()).resolves.toMatchObject({ success: true, data: { receipt: runLog.receipt } });
+
+    for (const bearer of [otherToken.token, "runtime-token"]) {
+      const denied = await app.request(`/v1/runs/${runLog.id}/receipt`, {
+        headers: { authorization: `Bearer ${bearer}` },
+      });
+      expect(denied.status).toBe(404);
+      await expect(denied.json()).resolves.toMatchObject({ success: false, errorCode: "run_not_found" });
+    }
   });
 });

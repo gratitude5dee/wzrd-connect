@@ -4,7 +4,7 @@ import type { ReactNode, SubmitEvent } from "react";
 import { useTranslate } from "@embra/i18n/react";
 import { ChevronDown, ChevronUp, Copy, Loader2, Search } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { apiGet } from "./api";
 import { compactJson, formatDate, formatDuration } from "./model";
 import { Badge, EmptyState, InlineError } from "./shared-ui";
@@ -194,7 +194,8 @@ export function RunsPage(props: RunsPageProps): ReactNode {
                 {runs.map((run) => {
                   const expanded = expandedResults.has(run.id);
                   const output = run.outputSummary == null ? "" : JSON.stringify(run.outputSummary);
-                  const expandable = output.length > 120;
+                  const hasReceiptData = Boolean(run.approvalId ?? run.receipt ?? run.providerReceipt);
+                  const expandable = output.length > 120 || hasReceiptData;
                   const policyCheck = run.policy?.checks.at(-1);
                   return (
                     <Fragment key={run.id}>
@@ -256,36 +257,29 @@ export function RunsPage(props: RunsPageProps): ReactNode {
                             <div className="run-result">
                               <pre>{output}</pre>
                               {expandable ? (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon-sm"
-                                      aria-label={t(expanded ? "runs.collapseResult" : "runs.expandResult")}
-                                      aria-expanded={expanded}
-                                      onClick={() => toggleResult(run.id)}
-                                    >
-                                      {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    {t(expanded ? "runs.collapseResult" : "runs.expandResult")}
-                                  </TooltipContent>
-                                </Tooltip>
+                                <ResultToggle expanded={expanded} onToggle={() => toggleResult(run.id)} />
                               ) : null}
                             </div>
                           ) : (
-                            <>
-                              <div className="run-primary">{run.errorCode ?? "-"}</div>
-                              {run.errorMessage ? <div className="run-secondary">{run.errorMessage}</div> : null}
-                            </>
+                            <div className="run-result">
+                              <div>
+                                <div className="run-primary">{run.errorCode ?? "-"}</div>
+                                {run.errorMessage ? <div className="run-secondary">{run.errorMessage}</div> : null}
+                              </div>
+                              {expandable ? (
+                                <ResultToggle expanded={expanded} onToggle={() => toggleResult(run.id)} />
+                              ) : null}
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
                       {expanded ? (
                         <TableRow className="run-result-detail-row">
                           <TableCell colSpan={6}>
-                            <pre className="run-result-detail">{JSON.stringify(run.outputSummary, null, 2)}</pre>
+                            {output ? (
+                              <pre className="run-result-detail">{JSON.stringify(run.outputSummary, null, 2)}</pre>
+                            ) : null}
+                            <RunReceipts run={run} />
                           </TableCell>
                         </TableRow>
                       ) : null}
@@ -312,6 +306,176 @@ export function RunsPage(props: RunsPageProps): ReactNode {
       </div>
     </TooltipProvider>
   );
+}
+
+function ResultToggle(props: { expanded: boolean; onToggle(): void }): ReactNode {
+  const t = useTranslate();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t(props.expanded ? "runs.collapseResult" : "runs.expandResult")}
+          aria-expanded={props.expanded}
+          onClick={props.onToggle}
+        >
+          {props.expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{t(props.expanded ? "runs.collapseResult" : "runs.expandResult")}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * §4.6 receipts block inside a run's detail row: the §4.2 approval deep link,
+ * the custodian receipt claims with a client-side verify against the served
+ * JWKS, and the Brand receipt's stored verified state.
+ */
+function RunReceipts(props: { run: RunLog }): ReactNode {
+  const t = useTranslate();
+  const claims = useMemo(
+    () => (props.run.receipt === undefined ? undefined : decodeJwsPayload(props.run.receipt)),
+    [props.run.receipt],
+  );
+  const [verifyState, setVerifyState] = useState<"idle" | "pending" | "ok" | "failed">("idle");
+
+  async function verify(): Promise<void> {
+    if (props.run.receipt === undefined) return;
+    setVerifyState("pending");
+    try {
+      setVerifyState((await verifyCustodianReceipt(props.run.receipt)) ? "ok" : "failed");
+    } catch {
+      setVerifyState("failed");
+    }
+  }
+
+  if (!props.run.approvalId && !props.run.receipt && !props.run.providerReceipt) {
+    return null;
+  }
+  const providerReceipt = props.run.providerReceipt;
+  return (
+    <div className="run-receipts">
+      {props.run.approvalId ? (
+        <div className="run-receipt-row">
+          <Link className="run-receipt-link" to={`/approvals/${props.run.approvalId}`}>
+            {t("runs.viewApproval")}
+          </Link>
+        </div>
+      ) : null}
+      {props.run.receipt ? (
+        <div className="run-receipt-row">
+          <div className="run-receipt-head">
+            <span className="run-receipt-title">{t("runs.receipts.custodian")}</span>
+            <Button variant="outline" size="sm" onClick={() => void verify()} disabled={verifyState === "pending"}>
+              {verifyState === "pending" ? <Loader2 size={13} className="spin" /> : null}
+              {t("runs.receipts.verify")}
+            </Button>
+            {verifyState === "ok" ? <Badge tone="success">{t("runs.receipts.verified")}</Badge> : null}
+            {verifyState === "failed" ? <Badge tone="error">{t("runs.receipts.verifyFailed")}</Badge> : null}
+          </div>
+          <pre className="run-result-detail run-receipt-json">
+            {JSON.stringify(claims ?? props.run.receipt, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+      {providerReceipt ? (
+        <div className="run-receipt-row">
+          <div className="run-receipt-head">
+            <span className="run-receipt-title">{t("runs.receipts.provider")}</span>
+            {providerReceipt.verified ? (
+              <Badge tone="success">{t("runs.receipts.verified")}</Badge>
+            ) : (
+              <Badge tone="error">{t("runs.receipts.unverified")}</Badge>
+            )}
+            {providerReceipt.failureReason ? (
+              <span className="run-secondary mono">{providerReceipt.failureReason}</span>
+            ) : null}
+          </div>
+          {providerReceipt.claims ? (
+            <pre className="run-result-detail run-receipt-json">{JSON.stringify(providerReceipt.claims, null, 2)}</pre>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Fetch the deployment's published JWKS (PACT identity route). */
+async function readDeploymentJwks(): Promise<unknown> {
+  const response = await fetch("/.well-known/jwks.json");
+  return response.ok ? response.json() : {};
+}
+
+/** Decode a compact JWS's payload segment for display; undefined when malformed. */
+export function decodeJwsPayload(jws: string): Record<string, unknown> | undefined {
+  try {
+    const parts = jws.split(".");
+    if (parts.length !== 3) {
+      return undefined;
+    }
+    const value: unknown = JSON.parse(new TextDecoder().decode(base64UrlToBytes(parts[1])));
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Client-side §4.6 check: verify the custodian receipt JWS against a key from
+ * the deployment's served JWKS. Only ES256/P-256 keys verify — the algorithm
+ * the custodian signs with.
+ */
+export async function verifyCustodianReceipt(
+  jws: string,
+  readJwks: () => Promise<unknown> = readDeploymentJwks,
+): Promise<boolean> {
+  try {
+    const parts = jws.split(".");
+    if (parts.length !== 3) {
+      return false;
+    }
+    const header: unknown = JSON.parse(new TextDecoder().decode(base64UrlToBytes(parts[0])));
+    if (typeof header !== "object" || header === null) {
+      return false;
+    }
+    const jwks = await readJwks();
+    const keys = (jwks as { keys?: unknown }).keys;
+    if (!Array.isArray(keys)) {
+      return false;
+    }
+    const jwk = keys.find(
+      (key): key is JsonWebKey =>
+        typeof key === "object" && key !== null && (key as { kid?: unknown }).kid === (header as { kid?: unknown }).kid,
+    );
+    if (!jwk || jwk.kty !== "EC" || jwk.crv !== "P-256") {
+      return false;
+    }
+    const cryptoKey = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, [
+      "verify",
+    ]);
+    return await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      cryptoKey,
+      base64UrlToBytes(parts[2]) as BufferSource,
+      new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function base64UrlToBytes(value: string): Uint8Array {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(`${base64}${"=".repeat((4 - (base64.length % 4)) % 4)}`);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 function RunSelect(props: {

@@ -4,6 +4,7 @@ import type { PactRegistrationStore } from "../server/storage/pact-registration-
 import type { PactAgentCard, PactCardDelegation } from "./agent-card.ts";
 import type { PactConnectionCredential, PactConnectionDelegation } from "./pact-connection.ts";
 import type { PactConsentPayload, PactDelegationService } from "./pact-delegation-service.ts";
+import type { PactProviderReceipt, PactReceiptService } from "./pact-receipts.ts";
 
 import { ConnectionError } from "../connection-service.ts";
 import { looseArray, optionalRecord, optionalString } from "../core/cast.ts";
@@ -22,6 +23,10 @@ export interface PactServiceOptions {
   identity: PactIdentityService;
   /** Delegated authority (spec §4.5); absent keeps every flow identity-only. */
   delegation?: PactDelegationService;
+  /** Provider-receipt verifier (spec §4.6); absent skips verification entirely. */
+  receipts?: PactReceiptService;
+  /** `OOMOL_CONNECT_PACT_STRICT_RECEIPTS` — unverified receipts fail the action. */
+  strictReceipts?: boolean;
   /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK`. */
   allowInsecureLoopback?: boolean;
   fetcher?: typeof fetch;
@@ -268,7 +273,7 @@ export class PactService {
   }
 
   /** Dispatch a catalog pact action (validated input) for a stored Brand connection. */
-  async execute(input: PactActionExecutionInput): Promise<ExecutionResult> {
+  async execute(input: PactActionExecutionInput): Promise<PactExecutionResult> {
     try {
       switch (input.actionId) {
         case "pact.get_agent_card":
@@ -283,7 +288,12 @@ export class PactService {
           return { ok: false, error: { code: "unknown_action", message: `Unknown action: ${input.actionId}.` } };
       }
     } catch (error) {
-      return this.mapError(error);
+      const mapped = this.mapError(error);
+      // A strict receipt failure still records the rejected receipt on the run.
+      if (error instanceof PactReceiptInvalidError) {
+        return { ...mapped, providerReceipt: error.providerReceipt };
+      }
+      return mapped;
     }
   }
 
@@ -317,7 +327,7 @@ export class PactService {
     };
   }
 
-  private async runSendMessage(input: PactActionExecutionInput): Promise<ExecutionResult> {
+  private async runSendMessage(input: PactActionExecutionInput): Promise<PactExecutionResult> {
     const body = optionalRecord(input.input) ?? {};
     const text = optionalString(body.text);
     if (text === undefined || text.length === 0) {
@@ -354,6 +364,7 @@ export class PactService {
       throw error;
     }
     if (reply.kind === "message") {
+      const providerReceipt = await this.verifyReplyReceipt(connection, reply.message.metadata, input.signal);
       const message = reply.message;
       return {
         ok: true,
@@ -362,6 +373,7 @@ export class PactService {
           text: message.parts.map((part) => part.text ?? "").join(""),
           contextId: message.contextId,
         },
+        providerReceipt,
       };
     }
     const task = reply.task;
@@ -401,10 +413,44 @@ export class PactService {
         },
       };
     }
+    const providerReceipt = await this.verifyReplyReceipt(connection, task.metadata, input.signal);
     return {
       ok: true,
       output: { taskId: task.id, state: task.state, contextId: task.contextId },
+      providerReceipt,
     };
+  }
+
+  /**
+   * §4.6: verify the reply's `metadata["pact.receipt"]` against the
+   * connection's `jwksUri`. A negative outcome logs a warning; with
+   * `strictReceipts` it also fails the action (`502 pact_receipt_invalid`) —
+   * the Brand may already have run the action, which the error message says.
+   */
+  private async verifyReplyReceipt(
+    connection: StoredPactConnection,
+    metadata: Record<string, unknown> | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<PactProviderReceipt | undefined> {
+    if (!this.options.receipts) {
+      return undefined;
+    }
+    const receipt = await this.options.receipts.verifyProviderReceipt({
+      credential: connection.credential,
+      metadata,
+      signal,
+    });
+    if (receipt.verified) {
+      return receipt;
+    }
+    this.options.logger?.warn(
+      { failureReason: receipt.failureReason, connectionId: connection.id },
+      "pact provider receipt verification failed",
+    );
+    if (this.options.strictReceipts) {
+      throw new PactReceiptInvalidError(receipt);
+    }
+    return receipt;
   }
 
   /**
@@ -671,5 +717,29 @@ export class PactServiceError extends Error {
     this.name = "PactServiceError";
     this.code = code;
     this.details = details;
+  }
+}
+
+/** Pact execution result plus the §4.6 provider-receipt record for the run log. */
+export interface PactExecutionResult extends ExecutionResult {
+  providerReceipt?: PactProviderReceipt;
+}
+
+/**
+ * `OOMOL_CONNECT_PACT_STRICT_RECEIPTS` failure (spec §4.6): the Brand's reply
+ * carried no verifiable receipt. Carries the failed receipt so the run log
+ * still records it; `code` maps to `502 pact_receipt_invalid`.
+ */
+export class PactReceiptInvalidError extends PactServiceError {
+  readonly providerReceipt: PactProviderReceipt;
+
+  constructor(providerReceipt: PactProviderReceipt) {
+    super(
+      "pact_receipt_invalid",
+      "The Brand's reply carried no verifiable PACT receipt; the Brand action may already have run.",
+      { status: 502 },
+    );
+    this.name = "PactReceiptInvalidError";
+    this.providerReceipt = providerReceipt;
   }
 }

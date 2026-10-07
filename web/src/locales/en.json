@@ -521,6 +521,15 @@
       "timing": "Timing",
       "input": "Input",
       "result": "Result"
+    },
+    "viewApproval": "View approval",
+    "receipts": {
+      "custodian": "Custodian receipt",
+      "provider": "Provider receipt",
+      "verify": "Verify",
+      "verified": "Verified",
+      "unverified": "Unverified",
+      "verifyFailed": "Verification failed"
     }
   },
   "access": {

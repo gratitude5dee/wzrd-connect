@@ -65,6 +65,7 @@ describe("SqliteRuntimeDatabase", () => {
       "0020_pact_identity.sql",
       "0021_pact_connections.sql",
       "0022_pact_requests.sql",
+      "0023_run_receipts.sql",
     ];
     expect(entries.filter((entry) => entry.message === "sqlite migration started")).toEqual(
       migrations.map((migration) => ({ fields: { migration }, message: "sqlite migration started" })),
@@ -447,6 +448,41 @@ describe("SqliteRuntimeDatabase", () => {
     database.close();
   });
 
+  it("round-trips run receipts and deletes them with retention", async () => {
+    const databasePath = await createDatabasePath();
+    const database = new SqliteRuntimeDatabase(databasePath, { runLimit: 1 });
+    const receipted = {
+      ...createRun("run-receipted", "2026-06-30T00:00:00.000Z"),
+      receipt: "header.payload.signature",
+      providerReceipt: {
+        jws: "brand.payload.signature",
+        claims: { pa: "http://localhost:3000", grantId: "grant-1" },
+        verified: true,
+        verifiedAt: "2026-06-30T00:00:00.000Z",
+      },
+    };
+
+    await database.runLogStore.add(receipted);
+    await expect(database.runLogStore.get("run-receipted")).resolves.toEqual(receipted);
+
+    // The next insert evicts the whole row — the receipts go with it.
+    await database.runLogStore.add(createRun("run-new", "2026-06-30T00:00:01.000Z"));
+    await expect(database.runLogStore.get("run-receipted")).resolves.toBeUndefined();
+    database.close();
+
+    const raw = new DatabaseSync(databasePath);
+    expect(
+      (
+        raw
+          .prepare("select count(*) as count from runs where receipt is not null or provider_receipt is not null")
+          .get() as {
+          count: number;
+        }
+      ).count,
+    ).toBe(0);
+    raw.close();
+  });
+
   it("paginates recent runs with a cursor", async () => {
     const databasePath = await createDatabasePath();
     const database = new SqliteRuntimeDatabase(databasePath, { runLimit: 4 });
@@ -545,6 +581,8 @@ describe("SqliteRuntimeDatabase", () => {
     ]) {
       raw.exec(readFileSync(new URL(`../../../../migrations/${migration}`, import.meta.url), "utf8"));
     }
+    raw.exec("alter table runs add column receipt text");
+    raw.exec("alter table runs add column provider_receipt text");
     const store = new SqliteRunLogStore(raw, 1);
     await store.add(createRun("run-1", "2026-06-30T00:00:00.000Z"));
     raw.exec(`

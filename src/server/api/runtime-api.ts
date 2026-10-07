@@ -92,6 +92,8 @@ export interface RuntimeActionResultInput {
   actionId: string;
   executionId: string;
   remoteExecutionId?: string;
+  /** Set when a §4.6 custodian receipt was minted for the run; equals `executionId`. */
+  receiptId?: string;
   failureStatus?: RuntimeStatus;
   retryAfter?: string;
   auditPersisted: boolean;
@@ -207,7 +209,13 @@ export function serializeRuntimeFailure(input: RuntimeFailureInput): RuntimeActi
 /** Build the persistable HTTP response for a completed action execution. */
 export function serializeRuntimeActionResult(input: RuntimeActionResultInput): RuntimeActionHttpResult {
   const { actionId, executionId, auditPersisted, result } = input;
-  const meta = { executionId, actionId, auditPersisted, remoteExecutionId: input.remoteExecutionId };
+  const meta = {
+    executionId,
+    actionId,
+    auditPersisted,
+    remoteExecutionId: input.remoteExecutionId,
+    receiptId: input.receiptId,
+  };
   if (result.ok) {
     return {
       status: 200,
@@ -346,7 +354,7 @@ function mapExecutionErrorStatus(code: string | undefined, details?: unknown): R
   if (code === "pact_context_closed") {
     return 409;
   }
-  if (code === "pact_provider_unavailable") {
+  if (code === "pact_provider_unavailable" || code === "pact_receipt_invalid") {
     return 502;
   }
   if (code === "connection_not_found" || code === "unknown_service" || code === "unknown_action") {
@@ -410,7 +418,7 @@ export function connectionManagementFailure(error: { code: string; message: stri
   const pactStatus =
     errorCode === "pact_registration_required" || errorCode === "pact_context_closed"
       ? 409
-      : errorCode === "pact_provider_unavailable"
+      : errorCode === "pact_provider_unavailable" || errorCode === "pact_receipt_invalid"
         ? 502
         : errorCode === "pact_consent_required"
           ? 202

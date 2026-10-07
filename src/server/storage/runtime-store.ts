@@ -1,5 +1,6 @@
 import type { ActionPolicyDecision } from "../../core/action-policy.ts";
 import type { CredentialProfile } from "../../core/types.ts";
+import type { PactProviderReceipt } from "../../pact/pact-receipts.ts";
 
 export const DEFAULT_RUN_LIMIT = 5_000;
 
@@ -25,6 +26,10 @@ export interface RunLog {
   runtimeTokenId?: string;
   /** Approval record this run executed under (or was gated by), when the approval checkpoint ran. */
   approvalId?: string;
+  /** Compact JWS custodian receipt (spec §4.6), minted when a PACT identity exists. */
+  receipt?: string;
+  /** Brand `metadata["pact.receipt"]` verification record stored for `pact` runs (spec §4.6). */
+  providerReceipt?: PactProviderReceipt;
   policy?: ActionPolicyDecision;
   inputSummary?: unknown;
   outputSummary?: unknown;

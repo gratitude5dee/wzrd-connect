@@ -671,8 +671,8 @@ function insertRun(database: DatabaseSync, run: RunLog): void {
   database
     .prepare(
       `
-      insert into runs (id, service, action_id, caller, started_at, completed_at, ok, value)
-      values (?, ?, ?, ?, ?, ?, ?, ?)
+      insert into runs (id, service, action_id, caller, started_at, completed_at, ok, receipt, provider_receipt, value)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do update set
         service = excluded.service,
         action_id = excluded.action_id,
@@ -680,6 +680,8 @@ function insertRun(database: DatabaseSync, run: RunLog): void {
         started_at = excluded.started_at,
         completed_at = excluded.completed_at,
         ok = excluded.ok,
+        receipt = excluded.receipt,
+        provider_receipt = excluded.provider_receipt,
         value = excluded.value
     `,
     )
@@ -691,6 +693,8 @@ function insertRun(database: DatabaseSync, run: RunLog): void {
       run.startedAt,
       run.completedAt,
       run.ok ? 1 : 0,
+      run.receipt ?? null,
+      run.providerReceipt ? JSON.stringify(run.providerReceipt) : null,
       JSON.stringify(run),
     );
 }

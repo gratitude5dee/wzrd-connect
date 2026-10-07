@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
+import { canonicalJson, JsonCanonicalDepthError } from "../../core/json-canonical.ts";
 
 /** Maximum UTF-8 byte length accepted for an HTTP idempotency key. */
 export const idempotencyKeyMaxBytes = 255;
@@ -59,17 +60,20 @@ export function hashIdempotencyKey(key: string): string {
 
 /**
  * Hash the action semantics that must remain identical when a key is reused.
+ *
+ * The fingerprint text is the RFC 8785 serialization of the request fields in
+ * declaration order (the shape `JSON.stringify` emitted here historically),
+ * assembled field by field because {@link canonicalJson} sorts object keys.
  */
 export function hashActionRequest(input: ActionRequestFingerprintInput): string {
-  return sha256(
-    JSON.stringify({
-      actionId: input.actionId,
-      connectionName: input.connectionName,
-      connectionId: input.connectionId,
-      input: canonicalize(input.input, 1),
-      runtimeTokenId: input.runtimeTokenId,
-    }),
-  );
+  const serialized =
+    `{"actionId":${canonicalJson(input.actionId)}` +
+    `,"connectionName":${canonicalJson(input.connectionName)}` +
+    serializeField("connectionId", input.connectionId) +
+    (input.input === undefined ? "" : `,"input":${canonicalizeInput(input.input)}`) +
+    serializeField("runtimeTokenId", input.runtimeTokenId) +
+    "}";
+  return sha256(serialized);
 }
 
 /**
@@ -83,24 +87,18 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("base64url");
 }
 
-function canonicalize(value: unknown, depth: number): unknown {
-  if (Array.isArray(value)) {
-    assertDepth(depth);
-    return value.map((entry) => canonicalize(entry, depth + 1));
-  }
-  if (value && typeof value === "object") {
-    assertDepth(depth);
-    return Object.fromEntries(
-      Object.entries(value)
-        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-        .map(([key, entry]) => [key, canonicalize(entry, depth + 1)]),
-    );
-  }
-  return value;
+/** `,"key":<json>` when `value` is present, matching an omitted `JSON.stringify` field. */
+function serializeField(key: string, value: unknown): string {
+  return value === undefined ? "" : `,${canonicalJson(key)}:${canonicalJson(value)}`;
 }
 
-function assertDepth(depth: number): void {
-  if (depth > actionInputMaxDepth) {
-    throw new ActionInputDepthError();
+function canonicalizeInput(input: unknown): string {
+  try {
+    return canonicalJson(input, actionInputMaxDepth);
+  } catch (error) {
+    if (error instanceof JsonCanonicalDepthError) {
+      throw new ActionInputDepthError();
+    }
+    throw error;
   }
 }

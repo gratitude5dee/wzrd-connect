@@ -17,6 +17,7 @@ import { OAuthCredentialRefreshService } from "../oauth/oauth-credential-refresh
 import { OAuthFlowService } from "../oauth/oauth-flow-service.ts";
 import { PactDelegationService } from "../pact/pact-delegation-service.ts";
 import { PactIdentityService } from "../pact/pact-identity-service.ts";
+import { PactReceiptService } from "../pact/pact-receipts.ts";
 import { PactService } from "../pact/pact-service.ts";
 import { SaasCleanupService } from "../saas/saas-cleanup-service.ts";
 import { SaasClient } from "../saas/saas-client.ts";
@@ -68,6 +69,8 @@ export interface ConnectPactOptions {
   keyGraceSeconds?: number;
   /** `OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK` — permits http://loopback PACT Brand targets (dev only). */
   allowInsecureLoopback?: boolean;
+  /** `OOMOL_CONNECT_PACT_STRICT_RECEIPTS` — 502 pact_receipt_invalid on unverified Brand receipts. */
+  strictReceipts?: boolean;
 }
 
 export interface ConnectApp {
@@ -126,15 +129,22 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
           allowInsecureLoopback: options.pact!.allowInsecureLoopback,
           logger: options.logger,
         });
+        const receipts = new PactReceiptService({
+          identity,
+          allowInsecureLoopback: options.pact!.allowInsecureLoopback,
+        });
         return {
           identity,
           registrations: options.runtimeDatabase.pactRegistrationStore,
           delegation,
+          receipts,
           service: new PactService({
             store: options.runtimeDatabase.connectionStore,
             registrations: options.runtimeDatabase.pactRegistrationStore,
             identity,
             delegation,
+            receipts,
+            strictReceipts: options.pact!.strictReceipts,
             allowInsecureLoopback: options.pact!.allowInsecureLoopback,
             logger: options.logger,
           }),
@@ -151,6 +161,11 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     marketplace,
     pactRevocation: pact ? (stored) => pact.delegation.revokeGrant(stored) : undefined,
   });
+  const approvals = new ApprovalService({
+    store: options.runtimeDatabase.approvalStore,
+    ttlSeconds: options.approvalTtlSeconds,
+    logger: options.logger,
+  });
   const actions = new ActionRunner({
     providerHttpDispatch: options.providerHttpDispatch,
     catalog: options.catalog,
@@ -162,6 +177,8 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     logger: options.logger,
     marketplace,
     pact: pact?.service,
+    receipts: pact?.receipts,
+    approvals,
   });
 
   const triggers = new TriggerRunner({
@@ -177,11 +194,6 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
     tokens: options.runtimeDatabase.runtimeTokenStore,
     runtimePolicy: options.runtimeDatabase.runtimePolicyStore,
     deploymentPolicy: options.actionPolicy ?? new ExecutionPolicyService(),
-    logger: options.logger,
-  });
-  const approvals = new ApprovalService({
-    store: options.runtimeDatabase.approvalStore,
-    ttlSeconds: options.approvalTtlSeconds,
     logger: options.logger,
   });
   return {

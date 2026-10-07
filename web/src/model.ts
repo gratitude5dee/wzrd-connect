@@ -247,6 +247,10 @@ export interface RunLog {
   ok: boolean;
   connectionId?: string;
   runtimeTokenId?: string;
+  /** §4.6 custodian receipt: compact JWS signed by the deployment identity. */
+  receipt?: string;
+  /** §4.6 Brand `metadata["pact.receipt"]` verification record on pact runs. */
+  providerReceipt?: RunProviderReceipt;
   policy?: PolicyDecision;
   connectionProfile?: {
     displayName?: string;
@@ -256,6 +260,15 @@ export interface RunLog {
   errorCode?: string;
   errorMessage?: string;
   approvalId?: string;
+}
+
+/** §4.6 Brand receipt verification record mirrored on the run. */
+export interface RunProviderReceipt {
+  jws?: string;
+  claims?: Record<string, unknown>;
+  verified: boolean;
+  verifiedAt: string;
+  failureReason?: string;
 }
 
 export interface RunLogPage {

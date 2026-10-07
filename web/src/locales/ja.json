@@ -521,6 +521,15 @@
       "timing": "日時",
       "input": "入力",
       "result": "結果"
+    },
+    "viewApproval": "承認を表示",
+    "receipts": {
+      "custodian": "カストディアン・レシート",
+      "provider": "プロバイダー・レシート",
+      "verify": "検証",
+      "verified": "検証済み",
+      "unverified": "未検証",
+      "verifyFailed": "検証に失敗しました"
     }
   },
   "access": {

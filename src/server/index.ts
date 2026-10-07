@@ -31,6 +31,7 @@ const approvalTtlSeconds = readPositiveIntegerEnv("OOMOL_CONNECT_APPROVAL_TTL_SE
 const pactEnabled = parseBooleanEnv("OOMOL_CONNECT_PACT_ENABLED");
 const pactKeyGraceSeconds = readPositiveIntegerEnv("OOMOL_CONNECT_PACT_KEY_GRACE_SECONDS", 86_400);
 const pactAllowInsecureLoopback = parseBooleanEnv("OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK");
+const pactStrictReceipts = parseBooleanEnv("OOMOL_CONNECT_PACT_STRICT_RECEIPTS");
 const databaseUrl = optionalEnv("OOMOL_CONNECT_DATABASE_URL");
 const databasePoolMax = readPositiveIntegerEnv("OOMOL_CONNECT_DATABASE_POOL_MAX", 10);
 const databaseConnectTimeoutMs = readPositiveIntegerEnv("OOMOL_CONNECT_DATABASE_CONNECT_TIMEOUT_MS", 10_000);
@@ -89,6 +90,7 @@ async function main(): Promise<void> {
       enabled: pactEnabled,
       keyGraceSeconds: pactKeyGraceSeconds,
       allowInsecureLoopback: pactAllowInsecureLoopback,
+      strictReceipts: pactStrictReceipts,
     },
     actionPolicy: {
       allowedActions: parseActionPolicyList(process.env.OOMOL_CONNECT_ALLOWED_ACTIONS),
