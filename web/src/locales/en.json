@@ -18,7 +18,10 @@
     "success": "Success",
     "cancel": "Cancel",
     "undo": "Undo",
-    "save": "Save"
+    "save": "Save",
+    "hide": "Hide",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "brand": {
     "subtitle": "Local runtime console",
@@ -480,7 +483,9 @@
     "dialog": {
       "configureTitle": "Configure {{name}} OAuth App",
       "editTitle": "Edit {{name}} OAuth App"
-    }
+    },
+    "copyConfigId": "Copy config ID",
+    "copyClientId": "Copy client ID"
   },
   "actions": {
     "connection": "Connection",
@@ -1036,7 +1041,8 @@
       "copyToken": "Copy token",
       "mint": "Mint token",
       "tokenFailed": "Could not mint the registration token.",
-      "subject": "Subject"
+      "subject": "Subject",
+      "copyValue": "Copy value"
     },
     "registrations": {
       "heading": "Brand registrations",
@@ -1123,6 +1129,7 @@
       "title": "Agent not found",
       "description": "This agent no longer exists."
     },
+    "back": "Back to agents",
     "list": {
       "name": "Name",
       "id": "ID",
@@ -1188,6 +1195,17 @@
     "description": "Configured connections your agents can use.",
     "connect": "Connect",
     "browseProviders": "Browse providers",
+    "added": {
+      "success": "Connection added successfully",
+      "setAccess": "Set agent access"
+    },
+    "confirm": {
+      "title": "Set default permissions",
+      "description": "Every agent can use the checked actions on {{name}} by default. Uncheck any this connection should not offer.",
+      "finish": "Finish",
+      "connectAnother": "Connect another"
+    },
+    "connectAnother": "Connect another service",
     "back": "Back to connections",
     "saveFailed": "Failed to save access changes.",
     "columns": {

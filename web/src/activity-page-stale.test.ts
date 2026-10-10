@@ -204,10 +204,14 @@ describe("ActivityPage filtered loading", () => {
       (element) => typeof element.type === "function" && element.type.name === "RunDetail",
     );
     const detailTree = (detail.type as (props: Record<string, unknown>) => ReactNode)(detail.props);
-    const copy = findElement(detailTree, (element) => element.props["aria-label"] === "runs.copyExecutionId");
-    (copy.props.onClick as (() => void) | undefined)?.();
-
-    expect(writeText).toHaveBeenCalledWith("initial-1");
+    const copy = findElement(
+      detailTree,
+      (element) =>
+        typeof element.type === "function" &&
+        element.type.name === "CopyButton" &&
+        element.props.label === "runs.copyExecutionId",
+    );
+    expect(copy.props.value).toBe("initial-1");
     vi.unstubAllGlobals();
   });
 });

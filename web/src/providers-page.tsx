@@ -36,10 +36,12 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { defaultMarketplaceDiscoveryUrl, isDefaultMarketplace } from "../../src/marketplace/default-marketplace";
 import { apiDelete, apiPost, apiPut } from "./api";
+import { CopyField } from "./components/copy-field";
+import { ConnectPermissionsConfirm } from "./connect-confirm";
 import { CredentialInput } from "./credential-input";
 import { DefaultMarketplaceCatalog } from "./default-marketplace-catalog";
 import { loadDefaultMarketplaceCatalog } from "./default-marketplace-discovery";
@@ -88,6 +90,7 @@ interface ProvidersPageProps {
 interface ProviderDetailProps {
   provider: ProviderDefinition;
   marketplace?: MarketplaceState;
+  data: AppData;
   connections: ConnectionRecord[];
   connectionStatus: ProviderConnectionStatus;
   oauthConfig?: OAuthConfig;
@@ -255,6 +258,7 @@ export function ProvidersPage(props: ProvidersPageProps): ReactNode {
       key={routeProvider.service}
       provider={routeProvider}
       marketplace={props.data.marketplace}
+      data={props.data}
       connections={configurableConnectionsForProvider(props.data.connections, routeProvider.service)}
       connectionStatus={connectionStatus}
       oauthConfig={oauthConfigForProvider(props.data.oauthConfigs, routeProvider.service)}
@@ -1068,12 +1072,14 @@ function ProviderNotFound(props: { service: string }): ReactNode {
 
 function ProviderDetail(props: ProviderDetailProps): ReactNode {
   const t = useTranslate();
+  const navigate = useNavigate();
   const [selectedConnectionName, setSelectedConnectionName] = useState<string>();
   const [creatingConnection, setCreatingConnection] = useState(props.connections.length === 0);
   const [newConnectionName, setNewConnectionName] = useState(
     props.connections.length === 0 ? defaultConnectionName : "",
   );
   const [pendingConnectionName, setPendingConnectionName] = useState<string>();
+  const [confirmConnection, setConfirmConnection] = useState<ConnectionRecord>();
   const selectedConnection =
     !creatingConnection && selectedConnectionName
       ? connectionByName(props.connections, selectedConnectionName)
@@ -1116,12 +1122,9 @@ function ProviderDetail(props: ProviderDetailProps): ReactNode {
     if (creatingConnection && pendingConnectionName) {
       const createdConnection = connectionByName(props.connections, pendingConnectionName);
       if (createdConnection) {
-        setSelectedConnectionName(pendingConnectionName);
-        setCreatingConnection(false);
-        setNewConnectionName("");
         setPendingConnectionName(undefined);
-        setSelectedAuthType(initialAuthType(props.provider, createdConnection));
-        setOAuthClientMode("configured");
+        setConfirmConnection(createdConnection);
+        return;
       }
       return;
     }
@@ -1277,73 +1280,91 @@ function ProviderDetail(props: ProviderDetailProps): ReactNode {
               </Button>
             </div>
           ) : null}
-          {supportsCredentialConnections && (locallyAvailable || props.connections.length > 0) ? (
-            <ConnectionManager
-              connections={props.connections}
-              selectedConnectionName={selectedConnectionName}
-              creating={creatingConnection}
-              newConnectionName={newConnectionName}
-              newConnectionNameError={newConnectionNameError}
-              canAdd={locallyAvailable}
-              onSelect={selectConnection}
-              onAdd={startNewConnection}
-              onCancel={cancelNewConnection}
-              onClearSelection={clearConnectionSelection}
-              onNewConnectionNameChange={setNewConnectionName}
-            />
-          ) : null}
-          {connectionEditorOpen && locallyAvailable && hasMultipleAuthMethods ? (
-            <ToggleGroup
-              className="auth-method-control bg-muted p-[3px]"
-              type="single"
-              value={selectedAuth?.type}
-              spacing={0}
-              aria-label={t("providers.connectionMethod")}
-              onValueChange={(value) => {
-                if (value) {
-                  setSelectedAuthType(value as AuthDefinition["type"]);
-                  setOAuthClientMode("configured");
-                }
+          {confirmConnection ? (
+            <ConnectPermissionsConfirm
+              connection={confirmConnection}
+              provider={props.provider}
+              data={props.data}
+              onRefresh={props.onRefresh}
+              onDone={() =>
+                navigate(`/connections?added=${encodeURIComponent(confirmConnection.id ?? confirmConnection.service)}`)
+              }
+              onConnectAnother={() => {
+                setConfirmConnection(undefined);
+                startNewConnection();
               }}
-            >
-              {props.provider.auth.map((auth) => (
-                <ToggleGroupItem
-                  key={auth.type}
-                  value={auth.type}
-                  className="h-[30px] rounded-md px-3 text-sm data-[state=on]:bg-background data-[state=on]:shadow-none"
-                >
-                  {authLabel(auth, t)}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          ) : null}
-          {!connectionEditorOpen ? null : !locallyAvailable ? (
-            <UnavailableProviderConnection
-              provider={props.provider}
-              connection={selectedConnection}
-              connectionName={formConnectionName}
-              onRefresh={props.onRefresh}
-            />
-          ) : selectedAuth ? (
-            <ConnectionForm
-              key={`${selectedAuth.type}:${creatingConnection ? "new" : selectedConnectionName}`}
-              provider={props.provider}
-              auth={selectedAuth}
-              connection={selectedConnection}
-              connectionName={formConnectionName}
-              connectionNameValid={!newConnectionNameError}
-              oauthConfig={props.oauthConfig}
-              oauthClientMode={oauthClientMode}
-              onRefresh={props.onRefresh}
-              onConfigureOAuthClient={() => setOAuthAppDialogOpen(true)}
-              onOAuthClientModeChange={changeOAuthClientMode}
-              onConnectionPendingChange={creatingConnection ? setPendingConnectionName : undefined}
             />
           ) : (
-            <EmptyState
-              title={t("providers.noConnectionMethodTitle")}
-              description={t("providers.noConnectionMethodDescription")}
-            />
+            <>
+              {supportsCredentialConnections && (locallyAvailable || props.connections.length > 0) ? (
+                <ConnectionManager
+                  connections={props.connections}
+                  selectedConnectionName={selectedConnectionName}
+                  creating={creatingConnection}
+                  newConnectionName={newConnectionName}
+                  newConnectionNameError={newConnectionNameError}
+                  canAdd={locallyAvailable}
+                  onSelect={selectConnection}
+                  onAdd={startNewConnection}
+                  onCancel={cancelNewConnection}
+                  onClearSelection={clearConnectionSelection}
+                  onNewConnectionNameChange={setNewConnectionName}
+                />
+              ) : null}
+              {connectionEditorOpen && locallyAvailable && hasMultipleAuthMethods ? (
+                <ToggleGroup
+                  className="auth-method-control bg-muted p-[3px]"
+                  type="single"
+                  value={selectedAuth?.type}
+                  spacing={0}
+                  aria-label={t("providers.connectionMethod")}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setSelectedAuthType(value as AuthDefinition["type"]);
+                      setOAuthClientMode("configured");
+                    }
+                  }}
+                >
+                  {props.provider.auth.map((auth) => (
+                    <ToggleGroupItem
+                      key={auth.type}
+                      value={auth.type}
+                      className="h-[30px] rounded-md px-3 text-sm data-[state=on]:bg-background data-[state=on]:shadow-none"
+                    >
+                      {authLabel(auth, t)}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              ) : null}
+              {!connectionEditorOpen ? null : !locallyAvailable ? (
+                <UnavailableProviderConnection
+                  provider={props.provider}
+                  connection={selectedConnection}
+                  connectionName={formConnectionName}
+                  onRefresh={props.onRefresh}
+                />
+              ) : selectedAuth ? (
+                <ConnectionForm
+                  key={`${selectedAuth.type}:${creatingConnection ? "new" : selectedConnectionName}`}
+                  provider={props.provider}
+                  auth={selectedAuth}
+                  connection={selectedConnection}
+                  connectionName={formConnectionName}
+                  connectionNameValid={!newConnectionNameError}
+                  oauthConfig={props.oauthConfig}
+                  oauthClientMode={oauthClientMode}
+                  onRefresh={props.onRefresh}
+                  onConfigureOAuthClient={() => setOAuthAppDialogOpen(true)}
+                  onOAuthClientModeChange={changeOAuthClientMode}
+                  onConnectionPendingChange={creatingConnection ? setPendingConnectionName : undefined}
+                />
+              ) : (
+                <EmptyState
+                  title={t("providers.noConnectionMethodTitle")}
+                  description={t("providers.noConnectionMethodDescription")}
+                />
+              )}
+            </>
           )}
         </section>
 
@@ -1967,10 +1988,10 @@ export function ConnectionForm(props: ConnectionFormProps): ReactNode {
       {props.auth.type === "oauth2" && !remote && props.oauthClientMode === "manual" ? (
         <>
           {props.oauthConfig?.expectedRedirectUri ? (
-            <Label className="field">
-              <span>{t("providers.oauthClientSettings.callbackUrl")}</span>
-              <Input className="font-mono text-xs" value={props.oauthConfig.expectedRedirectUri} readOnly />
-            </Label>
+            <CopyField
+              label={t("providers.oauthClientSettings.callbackUrl")}
+              value={props.oauthConfig.expectedRedirectUri}
+            />
           ) : null}
           <Label className="field">
             <span>{t("providers.oauthClientSettings.clientId")}</span>

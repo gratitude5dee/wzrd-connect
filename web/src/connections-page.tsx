@@ -2,14 +2,15 @@ import type { AppData, ConnectionRecord, ProviderDefinition } from "./model";
 import type { ReactNode } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
-import { Plus } from "lucide-react";
+import { CheckCircle2, Plus } from "lucide-react";
 import { useMemo } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { tokensCoveringConnection } from "./agent-access";
 import { EmptyRows, Row, RowHeader, RowList } from "./components/row-list";
 import { isUsableCredentialConnection } from "./model";
 import { connectionDisplayLabel } from "./providers-page";
 import { ProviderIcon, providerInitials } from "./shared-ui";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
 interface ConnectionsPageProps {
@@ -19,6 +20,8 @@ interface ConnectionsPageProps {
 
 export function ConnectionsPage(props: ConnectionsPageProps): ReactNode {
   const t = useTranslate();
+  const [searchParams] = useSearchParams();
+  const addedId = searchParams.get("added") ?? undefined;
   const providers = useMemo(
     () => new Map(props.data.providers.map((provider) => [provider.service, provider])),
     [props.data.providers],
@@ -45,6 +48,17 @@ export function ConnectionsPage(props: ConnectionsPageProps): ReactNode {
           </Link>
         </Button>
       </div>
+      {addedId ? (
+        <Alert variant="success">
+          <CheckCircle2 size={16} />
+          <AlertDescription>
+            {t("connections.added.success")}{" "}
+            <Link className="connection-added-link" to="/agents">
+              {t("connections.added.setAccess")}
+            </Link>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <RowList
         header={
           <RowHeader>
@@ -72,6 +86,7 @@ export function ConnectionsPage(props: ConnectionsPageProps): ReactNode {
               <Row
                 key={connection.id}
                 to={`/connections/${connection.id}`}
+                highlighted={connection.id === addedId}
                 icon={<ConnectionIcon provider={provider} service={connection.service} />}
                 title={provider?.displayName ?? connection.service}
                 cells={
@@ -88,6 +103,13 @@ export function ConnectionsPage(props: ConnectionsPageProps): ReactNode {
             );
           })
         )}
+        {connections.length > 0 ? (
+          <Row
+            to="/providers"
+            icon={<Plus className="text-muted-foreground" size={15} />}
+            title={t("connections.connectAnother")}
+          />
+        ) : null}
       </RowList>
     </section>
   );

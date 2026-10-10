@@ -18,7 +18,10 @@
     "success": "成功",
     "cancel": "取消",
     "undo": "撤销",
-    "save": "保存"
+    "save": "保存",
+    "hide": "隐藏",
+    "copy": "复制",
+    "copied": "已复制"
   },
   "brand": {
     "subtitle": "本地运行时控制台",
@@ -480,7 +483,9 @@
     "dialog": {
       "configureTitle": "配置 {{name}} OAuth App",
       "editTitle": "编辑 {{name}} OAuth App"
-    }
+    },
+    "copyConfigId": "复制配置 ID",
+    "copyClientId": "复制客户端 ID"
   },
   "actions": {
     "connection": "连接",
@@ -1036,7 +1041,8 @@
       "copyToken": "复制令牌",
       "mint": "签发令牌",
       "tokenFailed": "无法签发注册令牌。",
-      "subject": "主体"
+      "subject": "主体",
+      "copyValue": "复制值"
     },
     "registrations": {
       "heading": "Brand 注册",
@@ -1123,6 +1129,7 @@
       "title": "未找到代理",
       "description": "此代理已不存在。"
     },
+    "back": "返回代理",
     "list": {
       "name": "名称",
       "id": "ID",
@@ -1188,6 +1195,17 @@
     "description": "代理可使用的已配置连接。",
     "connect": "连接",
     "browseProviders": "浏览提供程序",
+    "added": {
+      "success": "连接添加成功",
+      "setAccess": "设置代理访问权限"
+    },
+    "confirm": {
+      "title": "设置默认权限",
+      "description": "默认情况下，每个代理都可以在 {{name}} 上执行所选操作。取消勾选此连接不应提供的操作。",
+      "finish": "完成",
+      "connectAnother": "再连接一个"
+    },
+    "connectAnother": "连接另一个服务",
     "back": "返回连接",
     "saveFailed": "保存访问更改失败。",
     "columns": {

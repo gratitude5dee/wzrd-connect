@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useTranslate } from "@embra/i18n/react";
 import { Fingerprint, Search, Settings } from "lucide-react";
 import { useMemo, useState } from "react";
+import { CopyButton } from "./components/copy-field";
 import { OAuthAppDialog } from "./oauth-app-form";
 import { SaasProjectSettings } from "./saas-project-settings";
 import { Badge, EmptyState, ProviderIcon } from "./shared-ui";
@@ -73,9 +74,20 @@ export function OAuthAppsPage(props: OAuthAppsPageProps): ReactNode {
                         {t(configured ? "oauthApps.configured" : "oauthApps.notConfigured")}
                       </Badge>
                     ) : (
-                      <code>{item.config.oauthSource.providerConfigId}</code>
+                      <>
+                        <code>{item.config.oauthSource.providerConfigId}</code>
+                        <CopyButton
+                          value={item.config.oauthSource.providerConfigId}
+                          label={t("oauthApps.copyConfigId")}
+                        />
+                      </>
                     )}
-                    {item.config?.clientId ? <code>{item.config.clientId}</code> : null}
+                    {item.config?.clientId ? (
+                      <>
+                        <code>{item.config.clientId}</code>
+                        <CopyButton value={item.config.clientId} label={t("oauthApps.copyClientId")} />
+                      </>
+                    ) : null}
                   </div>
                   <Button variant="outline" size="sm" type="button" onClick={() => setSelected(item)}>
                     <Settings size={15} />

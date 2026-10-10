@@ -14,13 +14,13 @@ import {
   tokensCoveringConnection,
 } from "./agent-access";
 import { apiPut } from "./api";
+import { DefaultPermissionList } from "./components/default-permissions";
 import { EmptyRows, Row, RowList } from "./components/row-list";
 import { emptyData, formatDate } from "./model";
 import { OAuthAppDialog } from "./oauth-app-form";
 import { authTypeLabel, ConnectionForm, connectionDisplayLabel, initialAuthType } from "./providers-page";
 import { Badge, EmptyState, ProviderIcon, providerInitials, StatusDot } from "./shared-ui";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 
 const recentRunLimit = 10;
 
@@ -134,33 +134,11 @@ function ConnectionDetail(props: { connection: ConnectionRecord; data: AppData; 
         {accessRows.length === 0 ? (
           <p className="agent-access-empty">{t("connections.permissions.empty")}</p>
         ) : (
-          <ul className="agent-fold-actions">
-            {accessRows.map((row) => (
-              <li className="agent-action-row" key={row.action.id}>
-                <Checkbox
-                  checked={row.defaultAllowed}
-                  disabled={saving || row.deploymentBlocked}
-                  onCheckedChange={(checked) => void toggleDefault(row.action, checked === true)}
-                  aria-label={row.action.name}
-                />
-                <div className="agent-action-copy">
-                  <div className="agent-action-title">
-                    <span>{row.action.name}</span>
-                    {row.highRisk ? <Badge>{t("agents.access.highRisk")}</Badge> : null}
-                  </div>
-                  <small>
-                    {row.action.description}
-                    {row.deploymentBlocked ? ` · ${t("agents.access.blockedByPolicy")}` : ""}
-                  </small>
-                </div>
-                {row.changedAgents > 0 ? (
-                  <span className="connection-changed-agents">
-                    {t("agents.access.defaultChanged", { count: row.changedAgents })}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <DefaultPermissionList
+            rows={accessRows}
+            disabled={saving}
+            onToggle={(action, allowed) => void toggleDefault(action, allowed)}
+          />
         )}
       </section>
 
