@@ -158,7 +158,7 @@ describe("ActivityPage filtered loading", () => {
 
     requests.get(path("gmail"))?.({ items: [run("gmail-1", "gmail")] });
     await flushMicrotasks();
-    requests.get(activityRunsPath({ cursor: "initial-next", filters: filters(), connectionIsId: false }))?.({
+    requests.get(activityRunsPath({ cursor: "initial-next", filters: filters() }))?.({
       items: [run("stale-1", "hackernews")],
     });
     await flushMicrotasks();
@@ -199,7 +199,10 @@ describe("ActivityPage filtered loading", () => {
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
     const tree = renderActivityPage(null, undefined, ["initial-1"]);
-    const detail = findElement(tree, (element) => element.type?.name === "RunDetail");
+    const detail = findElement(
+      tree,
+      (element) => typeof element.type === "function" && element.type.name === "RunDetail",
+    );
     const detailTree = (detail.type as (props: Record<string, unknown>) => ReactNode)(detail.props);
     const copy = findElement(detailTree, (element) => element.props["aria-label"] === "runs.copyExecutionId");
     (copy.props.onClick as (() => void) | undefined)?.();
@@ -237,7 +240,7 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 function path(connection: string): string {
-  return activityRunsPath({ filters: filters({ connection }), connectionIsId: false });
+  return activityRunsPath({ filters: filters({ connection }), connectionService: connection });
 }
 
 function run(id: string, service: string): RunLog {

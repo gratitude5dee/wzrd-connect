@@ -109,10 +109,18 @@ export function ActivityPage(props: ActivityPageProps): ReactNode {
   const [activityError, setActivityError] = useState<string | null>(null);
   const [expandedResults, setExpandedResults] = useState<Set<string>>(() => new Set(props.initialExpanded));
   const requestGeneration = useRef(0);
-  // A `connection` value matching a configured connection's id is client-side
-  // only; anything else also maps onto the run list's `service` param.
-  const connectionIsId =
-    filters.connection !== null && props.connections.some((connection) => connection.id === filters.connection);
+  // The service the run list's `service` param can narrow on: the resolved
+  // configured connection's service, or the raw value when it names one.
+  const connectionService =
+    filters.connection === null
+      ? undefined
+      : (findConfiguredConnection(filters.connection, props.connections)?.service ?? filters.connection);
+  // The select displays the canonical option value (the connection id when the
+  // filter resolved to a configured connection) instead of a blank trigger.
+  const connectionSelectValue =
+    filters.connection === null
+      ? allConnectionsFilterValue
+      : (findConfiguredConnection(filters.connection, props.connections)?.id ?? filters.connection);
   // A kind value from the preset (/runs) is not a filter the user set.
   const hasFilters = Boolean(
     filters.agent ||
@@ -167,7 +175,7 @@ export function ActivityPage(props: ActivityPageProps): ReactNode {
     try {
       const [runPage, approvalPage] = await Promise.all([
         wantRuns
-          ? apiGet<RunLogPage>(activityRunsPath({ filters: nextFilters, connectionIsId }))
+          ? apiGet<RunLogPage>(activityRunsPath({ filters: nextFilters, connectionService }))
           : Promise.resolve<RunLogPage>({ items: [] }),
         wantApprovals
           ? apiGet<ApprovalListPage>(activityApprovalsPath({ filters: nextFilters }))
@@ -209,7 +217,7 @@ export function ActivityPage(props: ActivityPageProps): ReactNode {
     try {
       const [runPage, approvalPage] = await Promise.all([
         runsCursor
-          ? apiGet<RunLogPage>(activityRunsPath({ cursor: runsCursor, filters, connectionIsId }))
+          ? apiGet<RunLogPage>(activityRunsPath({ cursor: runsCursor, filters, connectionService }))
           : Promise.resolve<RunLogPage>({ items: [] }),
         approvalsCursor
           ? apiGet<ApprovalListPage>(activityApprovalsPath({ cursor: approvalsCursor, filters }))
@@ -260,7 +268,7 @@ export function ActivityPage(props: ActivityPageProps): ReactNode {
   const events = activityEvents(
     filters.kind === "approval" ? [] : runs,
     filters.kind === "run" ? [] : approvals,
-  ).filter((event) => activityEventMatches(event, filters));
+  ).filter((event) => activityEventMatches(event, filters, props.connections));
   const tokenLabels = new Map(props.runtimeTokens.map((token) => [token.id, token.name || token.id]));
   const agentOptions = agentFilterOptions(props.runtimeTokens, runs, approvals, t);
   const connectionOptions = connectionFilterOptions(props.connections, runs, approvals);
@@ -295,7 +303,7 @@ export function ActivityPage(props: ActivityPageProps): ReactNode {
           </ActivitySelect>
           <ActivitySelect
             label={t("activity.connection")}
-            value={filters.connection ?? allConnectionsFilterValue}
+            value={connectionSelectValue}
             onChange={(value) => updateFilter("connection", value === allConnectionsFilterValue ? null : value)}
           >
             <SelectItem value={allConnectionsFilterValue}>{t("activity.allConnections")}</SelectItem>
@@ -787,7 +795,11 @@ function isDeniedRun(run: RunLog): boolean {
  * server-side subset (service/actionId/caller/ok on /api/runs, pending on
  * /api/approvals) already narrowed the window; the rest is client-side.
  */
-export function activityEventMatches(event: ActivityEvent, filters: ActivityFilters): boolean {
+export function activityEventMatches(
+  event: ActivityEvent,
+  filters: ActivityFilters,
+  connections: readonly ConnectionRecord[] = [],
+): boolean {
   if (filters.kind !== null && event.kind !== filters.kind) return false;
   if (filters.agent === adminAgentFilterValue) {
     if (eventAgentId(event) !== undefined) return false;
@@ -795,11 +807,14 @@ export function activityEventMatches(event: ActivityEvent, filters: ActivityFilt
     return false;
   }
   if (filters.connection !== null) {
-    const target = filters.connection;
+    const targets = connectionMatchTargets(filters.connection, connections);
+    const id = eventConnectionId(event);
+    const name = eventConnectionName(event);
+    const service = eventService(event);
     if (
-      eventConnectionId(event) !== target &&
-      eventService(event) !== target &&
-      eventConnectionName(event) !== target
+      (id === undefined || !targets.has(id)) &&
+      (name === undefined || !targets.has(name)) &&
+      (service === "" || !targets.has(service))
     ) {
       return false;
     }
@@ -816,14 +831,14 @@ export function activityEventMatches(event: ActivityEvent, filters: ActivityFilt
 export function activityRunsPath(input: {
   cursor?: string;
   filters: ActivityFilters;
-  connectionIsId: boolean;
+  connectionService?: string;
 }): string {
   const query = new URLSearchParams({ limit: String(activityPageLimit) });
   if (input.cursor) query.set("cursor", input.cursor);
   const { filters } = input;
-  // `connection` accepts a connection id or a service; only the service form
-  // maps onto the run list's `service` param.
-  if (filters.connection && !input.connectionIsId) query.set("service", filters.connection);
+  // `connection` accepts a connection id/name or a service; whichever form it
+  // took, the resolved service is what the run list's `service` param narrows.
+  if (filters.connection && input.connectionService !== undefined) query.set("service", input.connectionService);
   if (filters.actionId) query.set("actionId", filters.actionId);
   if (filters.caller) query.set("caller", filters.caller);
   if (filters.errorsOnly) query.set("ok", "false");
@@ -884,6 +899,34 @@ export function agentFilterOptions(
   return list;
 }
 
+/** The configured connection a `connection` filter value names, by id, name, or service. */
+export function findConfiguredConnection(
+  target: string,
+  connections: readonly ConnectionRecord[],
+): ConnectionRecord | undefined {
+  return connections.find(
+    (connection) => connection.id === target || connection.service === target || connection.connectionName === target,
+  );
+}
+
+/**
+ * Every key an event may carry that the filter value should match: the raw
+ * value, plus the resolved connection's id, service, and name. This is what
+ * lets `?connection=<id>` still match events that never stored a connectionId
+ * (denied/failed runs, approvals) and lets `?connection=<service>` match
+ * events that did.
+ */
+export function connectionMatchTargets(target: string, connections: readonly ConnectionRecord[]): ReadonlySet<string> {
+  const targets = new Set<string>([target]);
+  const record = findConfiguredConnection(target, connections);
+  if (record !== undefined) {
+    if (record.id !== undefined) targets.add(record.id);
+    targets.add(record.service);
+    if (record.connectionName !== undefined) targets.add(record.connectionName);
+  }
+  return targets;
+}
+
 /** Connection select options: configured connections first, then bare services seen in the feed. */
 export function connectionFilterOptions(
   connections: ConnectionRecord[],
@@ -893,7 +936,12 @@ export function connectionFilterOptions(
   const options = new Map<string, string>();
   const services = new Set<string>();
   for (const connection of connections) {
-    options.set(connection.id ?? connection.service, connection.connectionName ?? connection.id ?? connection.service);
+    // Connection names repeat across providers (every virtual default is named
+    // "default"), so the label always leads with the service.
+    options.set(
+      connection.id ?? connection.service,
+      connection.connectionName ? `${connection.service} · ${connection.connectionName}` : connection.service,
+    );
     services.add(connection.service);
   }
   for (const source of [...runs, ...approvals]) {

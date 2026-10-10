@@ -1,5 +1,5 @@
 import type { ActivityFilters } from "./activity-page";
-import type { ApprovalRecord, RunLog } from "./model";
+import type { ApprovalRecord, ConnectionRecord, RunLog } from "./model";
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -13,6 +13,8 @@ import {
   activityRunsPath,
   ActivityPage,
   approvalActivityStatus,
+  connectionFilterOptions,
+  connectionMatchTargets,
   runActivityStatus,
 } from "./activity-page";
 
@@ -79,6 +81,24 @@ describe("activityEventMatches", () => {
     expect(activityEventMatches(event, filters({ connection: "conn-1" }))).toBe(true);
     expect(activityEventMatches(event, filters({ connection: "gmail" }))).toBe(true); // service form
     expect(activityEventMatches(event, filters({ connection: "other" }))).toBe(false);
+    // A connection id also matches events that only carry the service or
+    // connection name — denied/failed runs never store a connectionId.
+    const connections = [connection("conn-1", "gmail", "default")];
+    expect(
+      activityEventMatches(
+        events.find((entry) => entry.id === "run-run-admin")!,
+        filters({ connection: "conn-1" }),
+        connections,
+      ),
+    ).toBe(true);
+    // And a service-name filter still matches events that do carry the id.
+    expect(
+      activityEventMatches(
+        events.find((entry) => entry.id === "run-run-token")!,
+        filters({ connection: "gmail" }),
+        connections,
+      ),
+    ).toBe(true);
     expect(activityEventMatches(event, filters({ status: "ok" }))).toBe(true);
     expect(activityEventMatches(event, filters({ status: "pending" }))).toBe(false);
   });
@@ -118,34 +138,51 @@ describe("activityEventMatches", () => {
 
 describe("activityRunsPath", () => {
   it("maps service-form connections and legacy filters onto /api/runs params", () => {
-    expect(activityRunsPath({ filters: filters({ connection: "gmail" }), connectionIsId: false })).toBe(
+    expect(activityRunsPath({ filters: filters({ connection: "gmail" }), connectionService: "gmail" })).toBe(
       "/api/runs?limit=50&service=gmail",
     );
     expect(
       activityRunsPath({
         cursor: "next cursor",
         filters: filters({ connection: "gmail", actionId: "gmail.search_threads", caller: "mcp" }),
-        connectionIsId: false,
+        connectionService: "gmail",
       }),
     ).toBe("/api/runs?limit=50&cursor=next+cursor&service=gmail&actionId=gmail.search_threads&caller=mcp");
   });
 
-  it("keeps a connection id out of the service param and narrows ok server-side", () => {
-    expect(activityRunsPath({ filters: filters({ connection: "conn-1" }), connectionIsId: true })).toBe(
-      "/api/runs?limit=50",
+  it("narrows by the resolved service even when the filter is a connection id", () => {
+    expect(activityRunsPath({ filters: filters({ connection: "conn-1" }), connectionService: "gmail" })).toBe(
+      "/api/runs?limit=50&service=gmail",
     );
-    expect(activityRunsPath({ filters: filters({ status: "ok" }), connectionIsId: false })).toBe(
-      "/api/runs?limit=50&ok=true",
+    expect(activityRunsPath({ filters: filters({ status: "ok" }) })).toBe("/api/runs?limit=50&ok=true");
+    expect(activityRunsPath({ filters: filters({ status: "denied" }) })).toBe("/api/runs?limit=50&ok=false");
+    expect(activityRunsPath({ filters: filters({ status: "failed" }) })).toBe("/api/runs?limit=50&ok=false");
+    expect(activityRunsPath({ filters: filters({ errorsOnly: true }) })).toBe("/api/runs?limit=50&ok=false");
+  });
+});
+
+describe("connectionMatchTargets", () => {
+  it("resolves a configured connection to every key an event may carry", () => {
+    const targets = connectionMatchTargets("conn-1", [connection("conn-1", "gmail", "Work")]);
+    expect(targets).toEqual(new Set(["conn-1", "gmail", "Work"]));
+    expect(connectionMatchTargets("gmail", [connection("conn-1", "gmail", "Work")])).toEqual(
+      new Set(["gmail", "conn-1", "Work"]),
     );
-    expect(activityRunsPath({ filters: filters({ status: "denied" }), connectionIsId: false })).toBe(
-      "/api/runs?limit=50&ok=false",
+    expect(connectionMatchTargets("unknown", [])).toEqual(new Set(["unknown"]));
+  });
+});
+
+describe("connectionFilterOptions", () => {
+  it("labels configured connections by service so repeated names stay distinct", () => {
+    const options = connectionFilterOptions(
+      [connection("gmail:default", "gmail", "default"), connection("slack:default", "slack", "default")],
+      [run("run-1")],
+      [],
     );
-    expect(activityRunsPath({ filters: filters({ status: "failed" }), connectionIsId: false })).toBe(
-      "/api/runs?limit=50&ok=false",
-    );
-    expect(activityRunsPath({ filters: filters({ errorsOnly: true }), connectionIsId: false })).toBe(
-      "/api/runs?limit=50&ok=false",
-    );
+    expect(options).toEqual([
+      { value: "gmail:default", label: "gmail · default" },
+      { value: "slack:default", label: "slack · default" },
+    ]);
   });
 });
 
@@ -309,6 +346,10 @@ function run(id: string): RunLog {
     ok: true,
     inputSummary: {},
   };
+}
+
+function connection(id: string, service: string, connectionName: string): ConnectionRecord {
+  return { id, service, connectionName, authType: "api_key", metadata: {} };
 }
 
 function approval(id: string, status: ApprovalRecord["status"]): ApprovalRecord {
