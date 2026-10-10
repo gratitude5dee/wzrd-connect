@@ -1,10 +1,11 @@
+import type { ActivityFilters } from "./activity-page";
 import type { RunLog, RunLogPage } from "./model";
 import type { ReactElement, ReactNode } from "react";
 import type { Mock } from "vitest";
 
 import { isValidElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { RunsPage, runListPath } from "./runs-page";
+import { activityRunsPath, ActivityPage } from "./activity-page";
 
 const hookState = vi.hoisted(() => ({
   effects: [] as Array<() => void | (() => void)>,
@@ -88,12 +89,12 @@ beforeEach(() => {
   apiMock.apiGet.mockReset();
 });
 
-describe("RunsPage service loading", () => {
+describe("ActivityPage filtered loading", () => {
   it("clears stale rows and pagination when a filtered request fails", async () => {
     apiMock.apiGet.mockRejectedValue(new Error("filtered request failed"));
 
-    renderRunsPage("gmail", "initial-next");
-    runLatestEffect();
+    renderActivityPage("gmail", "initial-next");
+    runEffects();
     await flushMicrotasks();
 
     expect(hookState.stateSetters[0]).toHaveBeenCalledWith([]);
@@ -102,7 +103,7 @@ describe("RunsPage service loading", () => {
     expect(hookState.stateValues[1]).toBeUndefined();
   });
 
-  it("ignores stale service responses after the selected service changes", async () => {
+  it("ignores stale responses after the selected connection changes", async () => {
     const requests = new Map<string, (page: RunLogPage) => void>();
     apiMock.apiGet.mockImplementation(
       (path: string) =>
@@ -111,32 +112,26 @@ describe("RunsPage service loading", () => {
         }),
     );
 
-    renderRunsPage("gmail");
-    runLatestEffect();
-    renderRunsPage("slack");
-    runLatestEffect();
+    renderActivityPage("gmail");
+    runEffects();
+    renderActivityPage("slack");
+    runEffects();
 
     const setRuns = hookState.stateSetters[0]!;
-    const setNextCursor = hookState.stateSetters[1]!;
+    const setRunsCursor = hookState.stateSetters[1]!;
     setRuns.mockClear();
-    setNextCursor.mockClear();
+    setRunsCursor.mockClear();
 
-    requests.get(runListPath({ filters: filters({ service: "slack" }) }))?.({
-      items: [run("slack-1", "slack")],
-      nextCursor: "slack-next",
-    });
+    requests.get(path("slack"))?.({ items: [run("slack-1", "slack")], nextCursor: "slack-next" });
     await flushMicrotasks();
 
-    requests.get(runListPath({ filters: filters({ service: "gmail" }) }))?.({
-      items: [run("gmail-1", "gmail")],
-      nextCursor: "gmail-next",
-    });
+    requests.get(path("gmail"))?.({ items: [run("gmail-1", "gmail")], nextCursor: "gmail-next" });
     await flushMicrotasks();
 
     expect(setRuns).toHaveBeenCalledTimes(1);
     expect(setRuns).toHaveBeenCalledWith([run("slack-1", "slack")]);
-    expect(setNextCursor).toHaveBeenCalledTimes(1);
-    expect(setNextCursor).toHaveBeenCalledWith("slack-next");
+    expect(setRunsCursor).toHaveBeenCalledTimes(1);
+    expect(setRunsCursor).toHaveBeenCalledWith("slack-next");
   });
 
   it("does not append a stale page after filters change", async () => {
@@ -148,24 +143,22 @@ describe("RunsPage service loading", () => {
         }),
     );
 
-    const initialTree = renderRunsPage(null, "initial-next");
-    runLatestEffect();
+    const initialTree = renderActivityPage(null, "initial-next");
+    runEffects();
     const loadMore = findElement(
       initialTree,
       (element) => Array.isArray(element.props.children) && element.props.children.includes("runs.loadMore"),
     );
     (loadMore.props.onClick as (() => void) | undefined)?.();
 
-    renderRunsPage("gmail");
-    runLatestEffect();
+    renderActivityPage("gmail");
+    runEffects();
     const setRuns = hookState.stateSetters[0]!;
     setRuns.mockClear();
 
-    requests.get(runListPath({ filters: filters({ service: "gmail" }) }))?.({
-      items: [run("gmail-1", "gmail")],
-    });
+    requests.get(path("gmail"))?.({ items: [run("gmail-1", "gmail")] });
     await flushMicrotasks();
-    requests.get(runListPath({ cursor: "initial-next", filters: filters() }))?.({
+    requests.get(activityRunsPath({ cursor: "initial-next", filters: filters(), connectionIsId: false }))?.({
       items: [run("stale-1", "hackernews")],
     });
     await flushMicrotasks();
@@ -182,15 +175,15 @@ describe("RunsPage service loading", () => {
           resolvePage = resolve;
         }),
     );
-    const tree = renderRunsPage(null, "initial-next");
-    runLatestEffect();
+    const tree = renderActivityPage(null, "initial-next");
+    runEffects();
     const loadMore = findElement(
       tree,
       (element) => Array.isArray(element.props.children) && element.props.children.includes("runs.loadMore"),
     );
     (loadMore.props.onClick as (() => void) | undefined)?.();
-    const serviceFilter = findElement(tree, (element) => element.props.label === "runs.service");
-    (serviceFilter.props.onChange as ((value: string) => void) | undefined)?.("gmail");
+    const connectionFilter = findElement(tree, (element) => element.props.label === "activity.connection");
+    (connectionFilter.props.onChange as ((value: string) => void) | undefined)?.("gmail");
     const setRuns = hookState.stateSetters[0]!;
     setRuns.mockClear();
 
@@ -205,8 +198,10 @@ describe("RunsPage service loading", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
-    const tree = renderRunsPage(null, undefined, ["initial-1"]);
-    const copy = findElement(tree, (element) => element.props["aria-label"] === "runs.copyExecutionId");
+    const tree = renderActivityPage(null, undefined, ["initial-1"]);
+    const detail = findElement(tree, (element) => element.type?.name === "RunDetail");
+    const detailTree = (detail.type as (props: Record<string, unknown>) => ReactNode)(detail.props);
+    const copy = findElement(detailTree, (element) => element.props["aria-label"] === "runs.copyExecutionId");
     (copy.props.onClick as (() => void) | undefined)?.();
 
     expect(writeText).toHaveBeenCalledWith("initial-1");
@@ -214,21 +209,35 @@ describe("RunsPage service loading", () => {
   });
 });
 
-function renderRunsPage(service: string | null, nextCursor?: string, expanded?: string[]): ReactNode {
-  routerState.searchParams = service ? new URLSearchParams({ service }) : new URLSearchParams();
+function renderActivityPage(connection: string | null, nextCursor?: string, expanded?: string[]): ReactNode {
+  routerState.searchParams = connection ? new URLSearchParams({ connection }) : new URLSearchParams();
   hookState.effects = [];
   hookState.refIndex = 0;
   hookState.stateIndex = 0;
-  return RunsPage({ initialRuns: [run("initial-1", "hackernews")], nextCursor, initialExpanded: expanded });
+  return ActivityPage({
+    initialRuns: [run("initial-1", "hackernews")],
+    runsNextCursor: nextCursor,
+    connections: [],
+    runtimeTokens: [],
+    preset: "run",
+    initialExpanded: expanded,
+  });
 }
 
-function runLatestEffect(): void {
-  hookState.effects.at(-1)?.();
+function runEffects(): void {
+  for (const effect of hookState.effects) {
+    effect();
+  }
 }
 
 async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
+}
+
+function path(connection: string): string {
+  return activityRunsPath({ filters: filters({ connection }), connectionIsId: false });
 }
 
 function run(id: string, service: string): RunLog {
@@ -245,8 +254,18 @@ function run(id: string, service: string): RunLog {
   };
 }
 
-function filters(input: Partial<Parameters<typeof runListPath>[0]["filters"]> = {}) {
-  return { service: null, actionId: "", caller: null, ok: null, ...input };
+function filters(input: Partial<ActivityFilters> = {}): ActivityFilters {
+  return {
+    agent: null,
+    connection: null,
+    status: null,
+    approval: null,
+    kind: null,
+    actionId: "",
+    caller: null,
+    errorsOnly: false,
+    ...input,
+  };
 }
 
 function findElement(

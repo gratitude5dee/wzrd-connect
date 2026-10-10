@@ -39,7 +39,7 @@
     "marketplace": "Marketplace",
     "oauthApps": "OAuth Apps",
     "actions": "Actions",
-    "runs": "Runs",
+    "activity": "Activity",
     "access": "API Key",
     "docs": "Connect clients",
     "approvals": "Approvals",
@@ -77,6 +77,9 @@
       "runs": {
         "title": "Runs"
       },
+      "activity": {
+        "title": "Activity"
+      },
       "access": {
         "title": "API Key"
       },
@@ -98,6 +101,7 @@
       "connected": "{{count}} connected",
       "actions": "{{count}} actions",
       "recent": "{{count}} recent",
+      "requests": "{{count}} requests",
       "pending": "{{count}} pending",
       "tokens": "{{count}} tokens",
       "configured": "{{count}} configured"
@@ -543,6 +547,51 @@
       "verified": "Verified",
       "unverified": "Unverified",
       "verifyFailed": "Verification failed"
+    }
+  },
+  "activity": {
+    "action": "Action",
+    "actionPlaceholder": "Filter by action ID",
+    "applyActionFilter": "Apply action filter",
+    "agent": "Agent",
+    "allAgents": "All agents",
+    "admin": "admin",
+    "connection": "Connection",
+    "allConnections": "All connections",
+    "status": "Status",
+    "allStatuses": "All statuses",
+    "statuses": {
+      "ok": "OK",
+      "pending": "Pending",
+      "denied": "Denied",
+      "failed": "Failed"
+    },
+    "approvalFilter": "Approval {{id}}",
+    "empty": "No activity yet — run an action to see it here.",
+    "emptyFiltered": "No activity matches the current filters.",
+    "approvalsUnavailable": "Approvals are unavailable on this runtime.",
+    "loadFailed": "Failed to load activity.",
+    "columns": {
+      "time": "Time",
+      "agent": "Agent",
+      "request": "Request",
+      "connection": "Connection",
+      "result": "Result"
+    },
+    "request": {
+      "ran": "Ran {{action}}",
+      "denied": "Denied: {{action}}",
+      "deniedReason": "Denied: {{action}} — {{reason}}",
+      "failed": "Failed: {{action}}",
+      "failedReason": "Failed: {{action}} — {{reason}}",
+      "approval": "Approval requested for {{action}}"
+    },
+    "decision": {
+      "approved": "approved by {{by}}",
+      "denied": "denied by {{by}}",
+      "executing": "executing",
+      "expired": "expired",
+      "failed": "failed"
     }
   },
   "access": {

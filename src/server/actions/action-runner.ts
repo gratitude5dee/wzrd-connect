@@ -8,7 +8,7 @@ import type { PactProviderReceipt, PactReceiptService } from "../../pact/pact-re
 import type { PactService } from "../../pact/pact-service.ts";
 import type { IProviderLoader } from "../../providers/provider-loader.ts";
 import type { SaasExecutionService } from "../../saas/saas-execution-service.ts";
-import type { RuntimeCallerKind } from "../api/auth.ts";
+import type { DeniedRequestAttempt, RuntimeCallerKind } from "../api/auth.ts";
 import type { ApprovalGate, ApprovalInterception } from "../approvals/approval-gate.ts";
 import type { ApprovalService } from "../approvals/approval-service.ts";
 import type { IRunLogStore, RunLog, RunLogCaller, RunLogListInput, RunLogPage } from "../storage/runtime-store.ts";
@@ -451,6 +451,34 @@ export class ActionRunner {
     } catch (error) {
       this.options.logger?.warn({ ...input.logContext, error: String(error) }, "custodian receipt signing failed");
       return undefined;
+    }
+  }
+
+  /**
+   * Records an auth-layer rejection (401/403 before the request reached a
+   * route) into the same run log, so the activity feed shows it as a denied
+   * attempt next to action runs. These rows carry no execution: `service` is
+   * "system" and `actionId` is the refused "<METHOD> <path>". Persistence is
+   * best-effort like run audit writes.
+   */
+  async recordDeniedRequest(attempt: DeniedRequestAttempt): Promise<void> {
+    const now = new Date().toISOString();
+    try {
+      await this.options.runs.add({
+        id: `denied-${crypto.randomUUID()}`,
+        service: "system",
+        actionId: `${attempt.method} ${attempt.path}`,
+        caller: attempt.path === "/mcp" || attempt.path.startsWith("/mcp/") ? "mcp" : "http",
+        startedAt: now,
+        completedAt: now,
+        durationMs: 0,
+        ok: false,
+        errorCode: attempt.errorCode,
+        errorMessage: attempt.message,
+        runtimeTokenId: attempt.runtimeTokenId,
+      });
+    } catch {
+      this.options.logger?.warn({ path: attempt.path, errorCode: attempt.errorCode }, "denied request audit failed");
     }
   }
 

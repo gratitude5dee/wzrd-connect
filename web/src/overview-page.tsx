@@ -74,7 +74,7 @@ export function OverviewPage(props: OverviewPageProps): ReactNode {
       meta: t("overview.recentFailuresMeta"),
       badgeLabel: summary.failedRunCount === 0 ? t("overview.ready") : t("overview.needsAttention"),
       badgeTone: summary.failedRunCount === 0 ? "success" : "warning",
-      to: "/runs",
+      to: "/activity",
     },
   ];
 
@@ -119,7 +119,7 @@ export function OverviewPage(props: OverviewPageProps): ReactNode {
           <div className="table-panel-heading">
             <h2>{t("overview.callTrend")}</h2>
             <Button asChild variant="outline" size="sm">
-              <Link to="/runs">
+              <Link to="/activity">
                 {t("overview.viewRuns")}
                 <ArrowUpRight size={15} />
               </Link>
@@ -189,7 +189,7 @@ export function OverviewPage(props: OverviewPageProps): ReactNode {
           <div className="table-panel-heading">
             <h2>{t("overview.recentCalls")}</h2>
             <Button asChild variant="outline" size="sm">
-              <Link to="/runs">
+              <Link to="/activity">
                 {t("overview.viewRuns")}
                 <ArrowUpRight size={15} />
               </Link>
@@ -208,7 +208,7 @@ export function OverviewPage(props: OverviewPageProps): ReactNode {
                 <Link
                   key={call.service}
                   className="overview-recent-call-row"
-                  to={`/runs?service=${encodeURIComponent(call.service)}`}
+                  to={`/activity?connection=${encodeURIComponent(call.service)}`}
                 >
                   <span className="overview-recent-call-provider">
                     {call.provider ? (

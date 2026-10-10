@@ -32,7 +32,7 @@ describe("OverviewPage", () => {
     expect(markup).toContain("Recent Calls");
     expect(markup).toContain("Gmail");
     expect(markup).toContain("2 calls");
-    expect(markup).toMatch(/href="\/runs\?service=gmail"/);
+    expect(markup).toMatch(/href="\/activity\?connection=gmail"/);
   });
 
   it("limits recent calls to seven providers", () => {
@@ -89,8 +89,8 @@ describe("OverviewPage", () => {
     expect(markup).toContain("2 calls");
     expect(markup).toContain("1 call");
     expect(markup).not.toMatch(/<a class="overview-call-trend-legend-row" href=/);
-    expect(markup).toMatch(/href="\/runs\?service=gmail"/);
-    expect(markup).toMatch(/href="\/runs\?service=slack"/);
+    expect(markup).toMatch(/href="\/activity\?connection=gmail"/);
+    expect(markup).toMatch(/href="\/activity\?connection=slack"/);
   });
 
   it("renders call trend and recent calls in one overview activity row", () => {
@@ -127,7 +127,7 @@ describe("OverviewPage", () => {
     expect(markup.match(/class="overview-capability-cell"/g) ?? []).toHaveLength(3);
     expect(markup).toMatch(/class="overview-capability-cell" href="\/providers"/);
     expect(markup).toMatch(/class="overview-capability-cell" href="\/actions"/);
-    expect(markup).toMatch(/class="overview-capability-cell" href="\/runs"/);
+    expect(markup).toMatch(/class="overview-capability-cell" href="\/activity"/);
   });
 
   it("renders provider icons in the provider capability cell", () => {
