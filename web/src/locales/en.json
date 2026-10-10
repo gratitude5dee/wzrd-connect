@@ -43,7 +43,8 @@
     "access": "API Key",
     "docs": "Connect clients",
     "approvals": "Approvals",
-    "pact": "PACT"
+    "pact": "PACT",
+    "agents": "Agents"
   },
   "shell": {
     "invalidUnlockToken": "Enter a valid admin token to unlock the console.",
@@ -91,6 +92,9 @@
       },
       "pact": {
         "title": "PACT"
+      },
+      "agents": {
+        "title": "Agents"
       }
     },
     "navGroup": {
@@ -104,7 +108,8 @@
       "requests": "{{count}} requests",
       "pending": "{{count}} pending",
       "tokens": "{{count}} tokens",
-      "configured": "{{count}} configured"
+      "configured": "{{count}} configured",
+      "agents": "{{count}} agents"
     },
     "settings": "Settings",
     "settingsDescription": "Manage language, appearance, connections, and runtime.",
@@ -1098,6 +1103,80 @@
         "mode": "Mode",
         "scopes": "Granted scopes"
       }
+    }
+  },
+  "agents": {
+    "title": "Agents",
+    "description": "API agents and their token access.",
+    "newAgent": "New agent",
+    "advancedPolicy": "Advanced policy",
+    "resetFailed": "Failed to reset token.",
+    "empty": {
+      "title": "No agents",
+      "description": "Create an agent to connect clients with a runtime token."
+    },
+    "missing": {
+      "title": "Agent not found",
+      "description": "This agent no longer exists."
+    },
+    "list": {
+      "name": "Name",
+      "id": "ID",
+      "connections": "Connections",
+      "actions": "Actions",
+      "lastActive": "Last active",
+      "connectionsCount": "{{allowed}}/{{total}}",
+      "actionsCount": "{{allowed}}/{{total}}"
+    },
+    "detail": {
+      "description": "Runtime token, sign-in, and access for this agent."
+    },
+    "signin": {
+      "title": "Sign in",
+      "token": "Token",
+      "hidden": "Password hidden.",
+      "hiddenHint": "Reset it to get a new one.",
+      "shownOnce": "This token is shown once. Copy it now.",
+      "reset": "Reset",
+      "serverUrl": "MCP server URL",
+      "copy": "Copy",
+      "config": "Client config",
+      "created": "Created {{date}}",
+      "lastUsed": "Last used {{date}}"
+    },
+    "access": {
+      "title": "Access",
+      "changedCount": "{{count}} changed",
+      "filterPlaceholder": "Filter actions",
+      "changedOnly": "Changed only",
+      "default": "Default",
+      "changed": "Changed",
+      "highRisk": "High risk",
+      "blockedByPolicy": "Blocked by default policy",
+      "makeDefault": "Make this the default for every agent",
+      "reset": "Reset to default",
+      "defaultChanged": "Changed for {{count}} agents",
+      "saveFailed": "Failed to save access changes.",
+      "noConnections": "No usable connections yet. Connect a service first.",
+      "noMatches": "No actions match the current filter."
+    },
+    "activity": {
+      "title": "Activity",
+      "viewAll": "View all",
+      "empty": "No requests yet for this agent."
+    },
+    "reset": {
+      "title": "Reset token?",
+      "description": "This revokes the current token and creates a new one with the same access. Clients must update to the new token.",
+      "confirm": "Reset token"
+    },
+    "revoke": {
+      "title": "Revoke this agent?",
+      "description": "The token stops working immediately. This cannot be undone."
+    },
+    "defaults": {
+      "title": "Policy defaults",
+      "description": "Deployment and runtime rules that apply to every agent."
     }
   }
 }

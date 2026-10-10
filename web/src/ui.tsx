@@ -20,7 +20,7 @@ import {
   Cable,
   Fingerprint,
   Home,
-  KeyRound,
+  Bot,
   Loader2,
   LogOut,
   Monitor,
@@ -34,10 +34,11 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, matchPath, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
-import { AccessPage } from "./access-page";
+import { Link, matchPath, Navigate, NavLink, Route, Routes, useLocation, useParams } from "react-router";
 import { ActionsPage } from "./actions-page";
 import { ActivityPage } from "./activity-page";
+import { AgentPage } from "./agent-page";
+import { AgentsPage } from "./agents-page";
 import { ApiError, apiGet, apiPost } from "./api";
 import { ApprovalsPage } from "./approvals-page";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
@@ -85,7 +86,7 @@ const navGroups: readonly NavGroup[] = [
   {
     labelKey: "shell.navGroup.custody",
     items: [
-      { path: "/access", labelKey: "nav.access", icon: KeyRound },
+      { path: "/agents", labelKey: "nav.agents", icon: Bot },
       { path: "/approvals", labelKey: "nav.approvals", icon: ShieldCheck, badge: true },
       { path: "/pact", labelKey: "nav.pact", icon: Signature },
       { path: "/oauth-apps", labelKey: "nav.oauthApps", icon: Fingerprint },
@@ -388,8 +389,8 @@ function headerDetailForSection(section: string | undefined, data: AppData): Hea
       return { key: "shell.detail.recent", count: data.runs.length };
     case "approvals":
       return { key: "shell.detail.pending", count: data.pendingApprovals ?? 0 };
-    case "access":
-      return { key: "shell.detail.tokens", count: summary.activeTokenCount };
+    case "agents":
+      return { key: "shell.detail.agents", count: summary.activeTokenCount };
     case "oauth-apps":
       return { key: "shell.detail.configured", count: data.oauthConfigs.length };
     default:
@@ -634,17 +635,23 @@ function AppShell(props: {
               <Route path="/approvals/:approvalId" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
               <Route path="/pact" element={<PactPage onRefresh={props.onRefresh} />} />
               <Route
-                path="/access"
+                path="/agents"
                 element={
-                  <AccessPage
+                  <AgentsPage
                     providers={props.data.providers}
                     connections={props.data.connections}
                     tokens={props.data.runtimeTokens}
                     policy={props.data.runtimePolicy ?? emptyData.runtimePolicy!}
+                    runs={props.data.runs}
                     onRefresh={props.onRefresh}
                   />
                 }
               />
+              <Route
+                path="/agents/:agentId"
+                element={<AgentRoute data={props.data} gatewayUrl={clientBaseUrl} onRefresh={props.onRefresh} />}
+              />
+              <Route path="/access" element={<Navigate to="/agents" replace />} />
               <Route
                 path="/resources"
                 element={<ResourcesPage gatewayUrl={clientGatewayUrl} onGatewayUrlChange={setClientGatewayUrl} />}
@@ -874,6 +881,22 @@ function LanguageSelect(): ReactNode {
   );
 }
 
+function AgentRoute(props: { data: AppData; gatewayUrl: string; onRefresh(): void }): ReactNode {
+  const { agentId = "" } = useParams();
+  return (
+    <AgentPage
+      providers={props.data.providers}
+      connections={props.data.connections}
+      tokens={props.data.runtimeTokens}
+      policy={props.data.runtimePolicy ?? emptyData.runtimePolicy!}
+      runs={props.data.runs}
+      agentId={agentId}
+      gatewayUrl={props.gatewayUrl}
+      onRefresh={props.onRefresh}
+    />
+  );
+}
+
 function headingForPath(pathname: string): string {
   const section = pathname.split("/").filter(Boolean)[0];
   if (section === "providers") {
@@ -900,8 +923,8 @@ function headingForPath(pathname: string): string {
   if (section === "pact") {
     return "pact";
   }
-  if (section === "access") {
-    return "access";
+  if (section === "agents" || section === "access") {
+    return "agents";
   }
   if (section === "resources") {
     return "resources";

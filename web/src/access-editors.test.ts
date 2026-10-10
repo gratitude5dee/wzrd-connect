@@ -1,10 +1,9 @@
-import type { ConnectionRecord, ProviderDefinition } from "./model";
+import type { ConnectionRecord } from "./model";
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
-  AccessPage,
   allowedConnectionsFromDraft,
   ConnectionGrantEditor,
   connectionGrantOptions,
@@ -12,7 +11,7 @@ import {
   policyDraftFromRules,
   policyRulesFromDraft,
   runtimeTokenPolicyBody,
-} from "./access-page";
+} from "./access-editors";
 import { PolicyEditor } from "./policy-editor";
 
 vi.mock("@embra/i18n/react", () => ({
@@ -26,102 +25,7 @@ const githubWorkId = "22222222-2222-4222-8222-222222222222";
 const slackWorkId = "33333333-3333-4333-8333-333333333333";
 const retiredConnectionId = "44444444-4444-4444-8444-444444444444";
 
-describe("AccessPage", () => {
-  it("shows deployment, Runtime, and token policy state", () => {
-    const providers: ProviderDefinition[] = [
-      {
-        service: "github",
-        displayName: "GitHub",
-        categories: [],
-        authTypes: [],
-        auth: [],
-        actions: [
-          {
-            id: "github.create_issue",
-            service: "github",
-            name: "create_issue",
-            description: "Create an issue",
-            requiredScopes: [],
-            inputSchema: {},
-            outputSchema: {},
-            execution: {
-              locallyExecutable: true,
-              catalogOnly: false,
-              requiredAuthTypes: [],
-              noAuthRunnable: true,
-              needsCredential: false,
-            },
-          },
-        ],
-      },
-    ];
-    const markup = renderToStaticMarkup(
-      createElement(AccessPage, {
-        providers,
-        policy: {
-          deployment: {
-            allowedActions: ["github.*"],
-            blockedActions: ["github.delete_repository"],
-            allowedProxies: [],
-            blockedProxies: ["*"],
-          },
-          runtime: {
-            allowedActions: ["github.create_issue"],
-            blockedActions: [],
-            allowedProxies: ["github"],
-            blockedProxies: [],
-          },
-        },
-        tokens: [
-          {
-            id: "token-1",
-            name: "Issue bot",
-            allowedActions: ["github.*"],
-            blockedActions: ["github.delete_repository"],
-            allowedProxies: ["github"],
-            allowedConnections: [],
-            createdAt: "2026-07-20T00:00:00.000Z",
-          },
-          {
-            id: "token-2",
-            name: "Work bot",
-            allowedActions: [],
-            blockedActions: [],
-            allowedProxies: [],
-            allowedConnections: [githubWorkId, slackWorkId, retiredConnectionId],
-            createdAt: "2026-07-20T00:00:00.000Z",
-          },
-        ],
-        connections: [
-          { id: githubDefaultId, service: "github", connectionName: "default", authType: "oauth2", metadata: {} },
-          { id: githubWorkId, service: "github", connectionName: "work", authType: "oauth2", metadata: {} },
-          { id: slackWorkId, service: "slack", connectionName: "work", authType: "oauth2", metadata: {} },
-        ],
-        onRefresh: vi.fn(),
-      }),
-    );
-
-    expect(markup).toContain("access.policy.baseline.title");
-    expect(markup).toContain("access.policy.deploymentSummary.title");
-    expect(markup).toContain("access.policy.runtimeSummary.title");
-    expect(markup).not.toContain("github.create_issue");
-    expect(markup).toContain("github.delete_repository");
-    expect(markup).toContain("Issue bot");
-    expect(markup).toContain("Work bot");
-    expect(markup).toContain("access.policy.connectionsUnrestricted");
-    expect(markup).toContain("access.policy.connectionsRestricted");
-    expect(markup).toContain("work");
-    expect(markup).toContain("token-policy-connections");
-    expect(markup).toContain("GitHub · work, slack · work +1");
-    expect(markup).toContain(`title="GitHub · work, slack · work, ${retiredConnectionId}"`);
-    expect(markup).not.toContain(`<code>${githubWorkId}</code>`);
-    expect(markup).toContain("access.policy.edit");
-    expect(markup).toContain('role="combobox"');
-    expect(markup).not.toContain("<datalist");
-    expect(markup).not.toContain("access.policy.tester.trace");
-    expect(markup).not.toContain("access.policy.editor.title");
-  });
-
+describe("access editors", () => {
   it("treats omitted and empty allowedConnections as unrestricted token grants", () => {
     expect(createConnectionGrantDraft()).toEqual({ mode: "unrestricted", ids: [] });
     expect(createConnectionGrantDraft([])).toEqual({ mode: "unrestricted", ids: [] });

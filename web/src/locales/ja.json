@@ -43,7 +43,8 @@
     "access": "API Key",
     "docs": "接続ガイド",
     "approvals": "承認",
-    "pact": "PACT"
+    "pact": "PACT",
+    "agents": "エージェント"
   },
   "shell": {
     "invalidUnlockToken": "有効な管理者 token を入力してコンソールをロック解除してください。",
@@ -91,6 +92,9 @@
       },
       "pact": {
         "title": "PACT"
+      },
+      "agents": {
+        "title": "エージェント"
       }
     },
     "navGroup": {
@@ -104,7 +108,8 @@
       "requests": "{{count}} 件のリクエスト",
       "pending": "{{count}} 件保留中",
       "tokens": "{{count}} 件のトークン",
-      "configured": "{{count}} 件構成済み"
+      "configured": "{{count}} 件構成済み",
+      "agents": "{{count}} エージェント"
     },
     "settings": "設定",
     "settingsDescription": "言語、外観、接続、ランタイムを管理します。",
@@ -1098,6 +1103,80 @@
         "mode": "モード",
         "scopes": "付与されたスコープ"
       }
+    }
+  },
+  "agents": {
+    "title": "エージェント",
+    "description": "API エージェントとそのトークン アクセス。",
+    "newAgent": "新しいエージェント",
+    "advancedPolicy": "詳細ポリシー",
+    "resetFailed": "トークンのリセットに失敗しました。",
+    "empty": {
+      "title": "エージェントがありません",
+      "description": "ランタイム トークンでクライアントを接続するエージェントを作成します。"
+    },
+    "missing": {
+      "title": "エージェントが見つかりません",
+      "description": "このエージェントは存在しません。"
+    },
+    "list": {
+      "name": "名前",
+      "id": "ID",
+      "connections": "接続",
+      "actions": "アクション",
+      "lastActive": "最終アクティブ",
+      "connectionsCount": "{{allowed}}/{{total}}",
+      "actionsCount": "{{allowed}}/{{total}}"
+    },
+    "detail": {
+      "description": "このエージェントのランタイムトークン、サインイン、アクセス。"
+    },
+    "signin": {
+      "title": "サインイン",
+      "token": "トークン",
+      "hidden": "パスワードは非表示です。",
+      "hiddenHint": "リセットすると新しいものを取得できます。",
+      "shownOnce": "このトークンは一度だけ表示されます。今すぐコピーしてください。",
+      "reset": "リセット",
+      "serverUrl": "MCP サーバー URL",
+      "copy": "コピー",
+      "config": "クライアント設定",
+      "created": "作成日 {{date}}",
+      "lastUsed": "最終使用 {{date}}"
+    },
+    "access": {
+      "title": "アクセス",
+      "changedCount": "{{count}} 件変更",
+      "filterPlaceholder": "アクションを絞り込む",
+      "changedOnly": "変更のみ",
+      "default": "既定",
+      "changed": "変更済み",
+      "highRisk": "高リスク",
+      "blockedByPolicy": "既定ポリシーでブロック",
+      "makeDefault": "すべてのエージェントの既定にする",
+      "reset": "既定に戻す",
+      "defaultChanged": "{{count}} エージェントを変更",
+      "saveFailed": "アクセス変更の保存に失敗しました。",
+      "noConnections": "利用可能な接続がありません。先にサービスを接続してください。",
+      "noMatches": "フィルターに一致するアクションがありません。"
+    },
+    "activity": {
+      "title": "アクティビティ",
+      "viewAll": "すべて表示",
+      "empty": "このエージェントのリクエストはまだありません。"
+    },
+    "reset": {
+      "title": "トークンをリセットしますか？",
+      "description": "現在のトークンを失効し、同じアクセス権で新しいトークンを作成します。クライアントは新しいトークンに更新する必要があります。",
+      "confirm": "トークンをリセット"
+    },
+    "revoke": {
+      "title": "このエージェントを失効しますか？",
+      "description": "トークンは直ちに無効になります。元に戻せません。"
+    },
+    "defaults": {
+      "title": "既定ポリシー",
+      "description": "すべてのエージェントに適用されるデプロイメントおよびランタイム ルール。"
     }
   }
 }
