@@ -6,17 +6,19 @@ import { ChevronDown, ChevronUp, Copy, Loader2, Search } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { apiGet } from "./api";
+import { EmptyRows, Row, RowHeader, RowList } from "./components/row-list";
 import { compactJson, formatDate, formatDuration } from "./model";
-import { Badge, EmptyState, InlineError } from "./shared-ui";
+import { Badge, InlineError } from "./shared-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface RunsPageProps {
   initialRuns: RunLog[];
   nextCursor?: string;
+  // Tests render the expanded detail row through this instead of a click.
+  initialExpanded?: readonly string[];
 }
 
 interface RunServiceOption {
@@ -36,6 +38,16 @@ const allCallersFilterValue = "__all_callers__";
 const allStatusesFilterValue = "__all_statuses__";
 const runPageLimit = 50;
 
+// The column schema the header and every run row share; hidden cells fold away
+// on narrow widths from the least useful column inward.
+const RUN_CELLS = {
+  caller: "hidden w-40 shrink-0 truncate text-muted-foreground md:block",
+  summary: "hidden w-56 shrink-0 truncate text-muted-foreground lg:block",
+  timing: "w-32 shrink-0 text-right text-muted-foreground tabular-nums",
+  status: "w-16 shrink-0 text-right",
+  toggle: "flex w-6 shrink-0 items-center justify-end text-muted-foreground",
+};
+
 export function RunsPage(props: RunsPageProps): ReactNode {
   const t = useTranslate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -45,7 +57,7 @@ export function RunsPage(props: RunsPageProps): ReactNode {
   const [actionDraft, setActionDraft] = useState(filters.actionId);
   const [loading, setLoading] = useState(false);
   const [runsError, setRunsError] = useState<string | null>(null);
-  const [expandedResults, setExpandedResults] = useState<Set<string>>(() => new Set());
+  const [expandedResults, setExpandedResults] = useState<Set<string>>(() => new Set(props.initialExpanded));
   const requestGeneration = useRef(0);
   const serviceOptions = useMemo(() => runServiceOptions([...props.initialRuns, ...runs]), [props.initialRuns, runs]);
   const callerOptions = useMemo(
@@ -175,121 +187,104 @@ export function RunsPage(props: RunsPageProps): ReactNode {
           </RunSelect>
         </section>
 
-        <section className="table-panel">
+        <RowList
+          header={
+            <RowHeader>
+              <span className="min-w-0 flex-1 truncate">{t("runs.table.action")}</span>
+              <span className={RUN_CELLS.caller}>{t("runs.table.context")}</span>
+              <span className={RUN_CELLS.summary}>{t("runs.table.input")}</span>
+              <span className={RUN_CELLS.timing}>{t("runs.table.timing")}</span>
+              <span className={RUN_CELLS.status}>{t("runs.table.status")}</span>
+              <span className={RUN_CELLS.toggle} />
+            </RowHeader>
+          }
+        >
           {runs.length === 0 ? (
-            <EmptyState title={t("runs.noRunsTitle")} description={t("runs.noRunsDescription")} icon={null} />
+            <EmptyRows>
+              {t("runs.noRunsTitle")} {t("runs.noRunsDescription")}
+            </EmptyRows>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="run-col-timing">{t("runs.table.timing")}</TableHead>
-                  <TableHead className="run-col-status">{t("runs.table.status")}</TableHead>
-                  <TableHead className="run-col-action">{t("runs.table.action")}</TableHead>
-                  <TableHead className="run-col-context">{t("runs.table.context")}</TableHead>
-                  <TableHead className="run-col-summary">{t("runs.table.input")}</TableHead>
-                  <TableHead className="run-col-summary">{t("runs.table.result")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {runs.map((run) => {
-                  const expanded = expandedResults.has(run.id);
-                  const output = run.outputSummary == null ? "" : JSON.stringify(run.outputSummary);
-                  const hasReceiptData = Boolean(run.approvalId ?? run.receipt ?? run.providerReceipt);
-                  const expandable = output.length > 120 || hasReceiptData;
-                  const policyCheck = run.policy?.checks.at(-1);
-                  return (
-                    <Fragment key={run.id}>
-                      <TableRow>
-                        <TableCell className="run-col-timing">
-                          <div className="run-primary">{formatDate(run.startedAt)}</div>
-                          <div className="run-secondary">{formatDuration(run)}</div>
-                        </TableCell>
-                        <TableCell className="run-col-status">
+            runs.map((run) => {
+              const expanded = expandedResults.has(run.id);
+              const output = run.outputSummary == null ? "" : JSON.stringify(run.outputSummary);
+              const policyCheck = run.policy?.checks.at(-1);
+              return (
+                <Fragment key={run.id}>
+                  <Row
+                    onClick={() => toggleResult(run.id)}
+                    title={<span className="mono">{run.actionId}</span>}
+                    cells={
+                      <>
+                        <span className={`mono ${RUN_CELLS.caller}`}>{run.caller}</span>
+                        <span className={`mono ${RUN_CELLS.summary}`}>
+                          {run.ok ? compactJson(run.inputSummary) : (run.errorCode ?? compactJson(run.inputSummary))}
+                        </span>
+                        <span className={RUN_CELLS.timing}>
+                          {formatDate(run.startedAt)} · {formatDuration(run)}
+                        </span>
+                        <span className={RUN_CELLS.status}>
                           {run.ok ? (
                             <Badge tone="success">{t("common.success")}</Badge>
                           ) : (
                             <Badge tone="error">{t("common.failed")}</Badge>
                           )}
-                        </TableCell>
-                        <TableCell className="run-col-action">
-                          <div className="run-primary mono">{run.actionId}</div>
-                          <div className="run-secondary mono">
-                            <span>{run.id}</span>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label={t("runs.copyExecutionId")}
-                                  onClick={() => void navigator.clipboard.writeText(run.id)}
-                                >
-                                  <Copy size={13} />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>{t("runs.copyExecutionId")}</TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </TableCell>
-                        <TableCell className="run-col-context">
-                          <div className="run-primary mono">{run.caller}</div>
-                          <div className="run-secondary">
-                            {run.connectionProfile?.displayName ?? run.connectionId ?? "-"}
-                          </div>
-                          {run.policy ? (
-                            <div className="run-secondary mono">
-                              {t(run.policy.allowed ? "runs.policyAllowed" : "runs.policyBlocked")}
-                              {policyCheck
-                                ? ` · ${t(`access.policy.sources.${policyCheck.source}`)}${policyCheck.rule ? `: ${policyCheck.rule}` : ""}`
-                                : ""}
-                            </div>
-                          ) : null}
-                          {run.runtimeTokenId ? (
-                            <div className="run-secondary mono">
-                              {t("runs.runtimeToken")}: {run.runtimeTokenId}
-                            </div>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="mono run-summary run-col-summary">
-                          {compactJson(run.inputSummary)}
-                        </TableCell>
-                        <TableCell className="mono run-summary run-col-summary">
-                          {run.ok ? (
-                            <div className="run-result">
-                              <pre>{output}</pre>
-                              {expandable ? (
-                                <ResultToggle expanded={expanded} onToggle={() => toggleResult(run.id)} />
-                              ) : null}
-                            </div>
-                          ) : (
-                            <div className="run-result">
-                              <div>
-                                <div className="run-primary">{run.errorCode ?? "-"}</div>
-                                {run.errorMessage ? <div className="run-secondary">{run.errorMessage}</div> : null}
-                              </div>
-                              {expandable ? (
-                                <ResultToggle expanded={expanded} onToggle={() => toggleResult(run.id)} />
-                              ) : null}
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                      {expanded ? (
-                        <TableRow className="run-result-detail-row">
-                          <TableCell colSpan={6}>
-                            {output ? (
-                              <pre className="run-result-detail">{JSON.stringify(run.outputSummary, null, 2)}</pre>
-                            ) : null}
-                            <RunReceipts run={run} />
-                          </TableCell>
-                        </TableRow>
+                        </span>
+                        <span className={RUN_CELLS.toggle}>
+                          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </span>
+                      </>
+                    }
+                  />
+                  {expanded ? (
+                    <li className="row-detail">
+                      <div className="row-detail-meta">
+                        <span className="mono row-detail-id">
+                          {run.id}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={t("runs.copyExecutionId")}
+                                onClick={() => void navigator.clipboard.writeText(run.id)}
+                              >
+                                <Copy size={13} />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("runs.copyExecutionId")}</TooltipContent>
+                          </Tooltip>
+                        </span>
+                        <span>
+                          {t("runs.table.context")}: <span className="mono">{run.caller}</span>
+                          {" · "}
+                          {run.connectionProfile?.displayName ?? run.connectionId ?? "-"}
+                        </span>
+                        {run.policy ? (
+                          <span className="mono">
+                            {t(run.policy.allowed ? "runs.policyAllowed" : "runs.policyBlocked")}
+                            {policyCheck
+                              ? ` · ${t(`access.policy.sources.${policyCheck.source}`)}${policyCheck.rule ? `: ${policyCheck.rule}` : ""}`
+                              : ""}
+                          </span>
+                        ) : null}
+                        {run.runtimeTokenId ? (
+                          <span className="mono">
+                            {t("runs.runtimeToken")}: {run.runtimeTokenId}
+                          </span>
+                        ) : null}
+                        {!run.ok && run.errorMessage ? <span>{run.errorMessage}</span> : null}
+                      </div>
+                      {output ? (
+                        <pre className="run-result-detail">{JSON.stringify(run.outputSummary, null, 2)}</pre>
                       ) : null}
-                    </Fragment>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                      <RunReceipts run={run} />
+                    </li>
+                  ) : null}
+                </Fragment>
+              );
+            })
           )}
-        </section>
+        </RowList>
         {runsError || nextCursor ? (
           <div className="runs-page-footer">
             {runsError ? <InlineError message={runsError} /> : null}
@@ -305,26 +300,6 @@ export function RunsPage(props: RunsPageProps): ReactNode {
         ) : null}
       </div>
     </TooltipProvider>
-  );
-}
-
-function ResultToggle(props: { expanded: boolean; onToggle(): void }): ReactNode {
-  const t = useTranslate();
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t(props.expanded ? "runs.collapseResult" : "runs.expandResult")}
-          aria-expanded={props.expanded}
-          onClick={props.onToggle}
-        >
-          {props.expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{t(props.expanded ? "runs.collapseResult" : "runs.expandResult")}</TooltipContent>
-    </Tooltip>
   );
 }
 

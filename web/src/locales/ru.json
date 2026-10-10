@@ -90,10 +90,23 @@
         "title": "PACT"
       }
     },
+    "navGroup": {
+      "operate": "Операции",
+      "custody": "Хранение"
+    },
+    "detail": {
+      "connected": "{{count}} подключено",
+      "actions": "{{count}} действий",
+      "recent": "{{count}} недавних",
+      "pending": "{{count}} ожидает",
+      "tokens": "{{count}} токенов",
+      "configured": "{{count}} настроено"
+    },
     "settings": "Настройки",
     "settingsDescription": "Язык, внешний вид, подключения и среда выполнения.",
     "oomolKeyDescription": "Посмотрите доступные сервисы и скидки, затем подключите ключ или управляйте им.",
-    "notifications": "Уведомления"
+    "notifications": "Уведомления",
+    "menu": "Меню"
   },
   "unlock": {
     "token": "Администраторский token",

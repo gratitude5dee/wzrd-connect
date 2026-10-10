@@ -90,10 +90,23 @@
         "title": "PACT"
       }
     },
+    "navGroup": {
+      "operate": "操作",
+      "custody": "保管"
+    },
+    "detail": {
+      "connected": "{{count}} 個已連線",
+      "actions": "{{count}} 個操作",
+      "recent": "{{count}} 筆最近記錄",
+      "pending": "{{count}} 個待處理",
+      "tokens": "{{count}} 個權杖",
+      "configured": "{{count}} 個已設定"
+    },
     "settings": "設定",
     "settingsDescription": "管理語言、外觀、連接與執行環境。",
     "oomolKeyDescription": "查看支援的服務與優惠，再選擇接入或管理 Key。",
-    "notifications": "通知"
+    "notifications": "通知",
+    "menu": "選單"
   },
   "unlock": {
     "token": "管理員權杖",

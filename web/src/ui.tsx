@@ -10,6 +10,7 @@ import type {
   RuntimeTokenSummary,
 } from "./model";
 import type { ThemeMode } from "./theme";
+import type { LucideIcon } from "lucide-react";
 import type { ReactNode, SubmitEvent } from "react";
 
 import { useI18n, useLang, useTranslate } from "@embra/i18n/react";
@@ -21,8 +22,10 @@ import {
   Home,
   KeyRound,
   Loader2,
+  LogOut,
   Monitor,
   Moon,
+  PanelLeft,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -30,8 +33,8 @@ import {
   Sun,
   TerminalSquare,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, matchPath, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { AccessPage } from "./access-page";
 import { ActionsPage } from "./actions-page";
 import { ApiError, apiGet, apiPost } from "./api";
@@ -39,7 +42,7 @@ import { ApprovalsPage } from "./approvals-page";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
 import { normalizeGatewayUrl } from "./client-onboarding";
 import { persistLang, supportedLangs } from "./i18n";
-import { emptyData } from "./model";
+import { createOverviewSummary, emptyData } from "./model";
 import { OAuthAppsPage } from "./oauth-apps-page";
 import { OverviewPage } from "./overview-page";
 import { PactPage } from "./pact-page";
@@ -47,6 +50,7 @@ import { ProvidersPage } from "./providers-page";
 import { ResourcesPage } from "./resources-page";
 import { RunsPage } from "./runs-page";
 import { InlineError, StatusDot } from "./shared-ui";
+import { readSidebarExpanded, writeSidebarExpanded } from "./sidebar-state";
 import { useThemeMode } from "./theme";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -54,17 +58,40 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Toaster } from "@/components/ui/sonner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-const navItems = [
-  { path: "/overview", labelKey: "nav.overview", icon: Home },
-  { path: "/providers", labelKey: "nav.providers", icon: Cable },
-  { path: "/oauth-apps", labelKey: "nav.oauthApps", icon: Fingerprint },
-  { path: "/actions", labelKey: "nav.actions", icon: TerminalSquare },
-  { path: "/runs", labelKey: "nav.runs", icon: Activity },
-  { path: "/approvals", labelKey: "nav.approvals", icon: ShieldCheck, badge: true },
-  { path: "/pact", labelKey: "nav.pact", icon: Signature },
-  { path: "/access", labelKey: "nav.access", icon: KeyRound },
-  { path: "/resources", labelKey: "nav.docs", icon: BookOpen },
+interface NavItem {
+  path: string;
+  labelKey: string;
+  icon: LucideIcon;
+  badge?: boolean;
+}
+
+interface NavGroup {
+  labelKey: string;
+  items: readonly NavItem[];
+}
+
+const navGroups: readonly NavGroup[] = [
+  {
+    labelKey: "shell.navGroup.operate",
+    items: [
+      { path: "/overview", labelKey: "nav.overview", icon: Home },
+      { path: "/providers", labelKey: "nav.providers", icon: Cable },
+      { path: "/actions", labelKey: "nav.actions", icon: TerminalSquare },
+      { path: "/runs", labelKey: "nav.runs", icon: Activity },
+    ],
+  },
+  {
+    labelKey: "shell.navGroup.custody",
+    items: [
+      { path: "/access", labelKey: "nav.access", icon: KeyRound },
+      { path: "/approvals", labelKey: "nav.approvals", icon: ShieldCheck, badge: true },
+      { path: "/pact", labelKey: "nav.pact", icon: Signature },
+      { path: "/oauth-apps", labelKey: "nav.oauthApps", icon: Fingerprint },
+      { path: "/resources", labelKey: "nav.docs", icon: BookOpen },
+    ],
+  },
 ] as const;
 
 const oauthCompletionChannelName = "oomol-connect-oauth";
@@ -340,6 +367,34 @@ function InitialLoadingView(): ReactNode {
   );
 }
 
+interface HeaderDetail {
+  key: string;
+  count: number;
+}
+
+// The muted tabular-nums detail beside the page title, where the loaded data
+// already carries a meaningful count (PAP's "Connections · 7 connected").
+function headerDetailForSection(section: string | undefined, data: AppData): HeaderDetail | null {
+  const summary = createOverviewSummary(data);
+  switch (section) {
+    case "overview":
+    case "providers":
+      return { key: "shell.detail.connected", count: summary.connectedCount };
+    case "actions":
+      return { key: "shell.detail.actions", count: summary.actionCount };
+    case "runs":
+      return { key: "shell.detail.recent", count: data.runs.length };
+    case "approvals":
+      return { key: "shell.detail.pending", count: data.pendingApprovals ?? 0 };
+    case "access":
+      return { key: "shell.detail.tokens", count: summary.activeTokenCount };
+    case "oauth-apps":
+      return { key: "shell.detail.configured", count: data.oauthConfigs.length };
+    default:
+      return null;
+  }
+}
+
 function AppShell(props: {
   data: AppData;
   showLogout: boolean;
@@ -353,6 +408,9 @@ function AppShell(props: {
   const t = useTranslate();
   const location = useLocation();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The rail is the default; the cookie remembers an explicit expansion.
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => readSidebarExpanded());
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [clientGatewayUrl, setClientGatewayUrl] = useState(() =>
     typeof window === "undefined" ? "http://localhost:3000" : window.location.origin,
   );
@@ -366,168 +424,222 @@ function AppShell(props: {
   const heading = headingForPath(location.pathname);
   const section = location.pathname.split("/").filter(Boolean)[0];
   const isOverviewPage = heading === "overview";
-  const isBrowserPage = section === "actions" || section === "runs";
-  const isRunsPage = section === "runs";
-  const mainClassName = [
-    isBrowserPage ? "main main-browser" : "main",
-    isOverviewPage ? "overview-main" : "",
-    isRunsPage ? "runs-main" : "",
-  ]
+  const isBrowserPage = section === "actions";
+  const mainClassName = [isBrowserPage ? "main main-browser" : "main", isOverviewPage ? "overview-main" : ""]
     .filter(Boolean)
     .join(" ");
-  const currentNavItem = navItems.find((item) => item.path === `/${section}`) ?? navItems[0];
-  const CurrentNavIcon = currentNavItem.icon;
+  const headerDetail = useMemo(() => headerDetailForSection(section, props.data), [section, props.data]);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "b") {
+        return;
+      }
+      if (event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable]")) {
+        return;
+      }
+      event.preventDefault();
+      setSidebarExpanded((expanded) => {
+        writeSidebarExpanded(!expanded);
+        return !expanded;
+      });
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  function toggleSidebar(): void {
+    setSidebarExpanded((expanded) => {
+      writeSidebarExpanded(!expanded);
+      return !expanded;
+    });
+  }
+
+  function onSidebarTrigger(): void {
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 960px)").matches) {
+      setMobileNavOpen(true);
+    } else {
+      toggleSidebar();
+    }
+  }
+
+  const rail = !sidebarExpanded;
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <img className="brand-mark" src={oomolConnectLogoUrl} alt="" />
-          <div>
-            <div className="brand-name">WZRD Connect</div>
-            <div className="brand-subtitle">{t("brand.subtitle")}</div>
+    <TooltipProvider delayDuration={120}>
+      <div className="app-shell" data-sidebar={rail ? "rail" : "expanded"}>
+        {mobileNavOpen ? (
+          <div className="sidebar-backdrop" aria-hidden="true" onClick={() => setMobileNavOpen(false)} />
+        ) : null}
+        <aside className="sidebar" data-mobile-open={mobileNavOpen ? true : undefined}>
+          <div className="brand">
+            <img className="brand-mark" src={oomolConnectLogoUrl} alt="" />
+            <div className="brand-text">
+              <div className="brand-name">WZRD Connect</div>
+              <div className="brand-subtitle">{t("brand.subtitle")}</div>
+            </div>
           </div>
-        </div>
 
-        <div className="sidebar-content">
-          <nav className="sidebar-nav" aria-label={t("shell.primaryNav")}>
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const badge = "badge" in item && item.badge ? (props.data.pendingApprovals ?? 0) : 0;
-              return (
-                <NavLink
-                  key={item.path}
-                  className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}
-                  to={item.path}
-                >
-                  <Icon size={16} />
-                  <span>{t(item.labelKey)}</span>
-                  {badge > 0 ? <span className="nav-badge">{badge}</span> : null}
-                </NavLink>
-              );
-            })}
-          </nav>
-        </div>
-      </aside>
-
-      <div className={isBrowserPage ? "main-region main-region-browser" : "main-region"}>
-        <header className="shell-header">
-          <div className="shell-header-title">
-            <CurrentNavIcon size={16} />
-            <h1>{t(`shell.headings.${heading}.title`)}</h1>
-          </div>
-          <div className="shell-header-actions">
-            {props.loading ? (
-              <div className="loading-panel page-loading">
-                <Loader2 className="spin" size={16} />
-                {t("common.loadingRuntimeData")}
-              </div>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("shell.settings")}
-              aria-haspopup="dialog"
-              aria-expanded={settingsOpen}
-              title={t("shell.settings")}
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings size={18} aria-hidden="true" />
-            </Button>
-          </div>
-          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <DialogContent className="console-settings-panel">
-              <DialogHeader>
-                <DialogTitle>{t("shell.settings")}</DialogTitle>
-                <DialogDescription>{t("shell.settingsDescription")}</DialogDescription>
-              </DialogHeader>
-              <div className="console-settings-controls">
-                <LanguageSelect />
-                <ThemeControl theme={props.theme} onThemeChange={props.onThemeChange} />
-              </div>
-              <div className="console-settings-section">
-                <Button asChild variant="outline">
-                  <Link to={connectionSettingsUrl} onClick={() => setSettingsOpen(false)}>
-                    <Cable size={15} aria-hidden="true" />
-                    {t("providers.hostedAccess.restore")}
-                  </Link>
-                </Button>
-                <p className="console-settings-feature-description">{t("shell.oomolKeyDescription")}</p>
-              </div>
-              <div className="console-settings-runtime">
-                <div className="runtime-status">
-                  <StatusDot ok={!props.error} />
-                  <span>{props.error ? t("common.apiUnavailable") : t("common.runtimeReady")}</span>
+          <div className="sidebar-content">
+            <nav className="sidebar-nav" aria-label={t("shell.primaryNav")}>
+              {navGroups.map((group) => (
+                <div className="nav-group" key={group.labelKey}>
+                  <div className="nav-group-label">{t(group.labelKey)}</div>
+                  {group.items.map((item) => {
+                    const badge = item.badge === true ? (props.data.pendingApprovals ?? 0) : 0;
+                    return (
+                      <ShellNavItem
+                        key={item.path}
+                        item={item}
+                        label={t(item.labelKey)}
+                        badge={badge}
+                        rail={rail}
+                        onNavigate={() => setMobileNavOpen(false)}
+                      />
+                    );
+                  })}
                 </div>
-                <Button variant="outline" size="sm" onClick={props.onRefresh} disabled={props.loading}>
-                  {props.loading ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
-                  {t("common.refresh")}
-                </Button>
-              </div>
-              {props.showLogout ? (
-                <Button variant="outline" onClick={props.onLogout}>
-                  {t("shell.logout")}
-                </Button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="sidebar-footer">
+            <ThemeMenuButton theme={props.theme} onThemeChange={props.onThemeChange} rail={rail} />
+            {props.showLogout ? (
+              <ShellFooterButton icon={LogOut} label={t("shell.logout")} rail={rail} onClick={props.onLogout} />
+            ) : null}
+          </div>
+        </aside>
+
+        <div className={isBrowserPage ? "main-region main-region-browser" : "main-region"}>
+          <header className="shell-header">
+            <div className="shell-header-title">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="sidebar-trigger"
+                aria-label={t("shell.menu")}
+                title={t("shell.menu")}
+                onClick={onSidebarTrigger}
+              >
+                <PanelLeft size={18} aria-hidden="true" />
+              </Button>
+              <h1>{t(`shell.headings.${heading}.title`)}</h1>
+              {headerDetail ? (
+                <span className="shell-header-detail">{t(headerDetail.key, { count: headerDetail.count })}</span>
               ) : null}
-            </DialogContent>
-          </Dialog>
-        </header>
+            </div>
+            <div className="shell-header-actions">
+              {props.loading ? (
+                <div className="loading-panel page-loading">
+                  <Loader2 className="spin" size={16} />
+                  {t("common.loadingRuntimeData")}
+                </div>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("shell.settings")}
+                aria-haspopup="dialog"
+                aria-expanded={settingsOpen}
+                title={t("shell.settings")}
+                onClick={() => setSettingsOpen(true)}
+              >
+                <Settings size={18} aria-hidden="true" />
+              </Button>
+            </div>
+            <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+              <DialogContent className="console-settings-panel">
+                <DialogHeader>
+                  <DialogTitle>{t("shell.settings")}</DialogTitle>
+                  <DialogDescription>{t("shell.settingsDescription")}</DialogDescription>
+                </DialogHeader>
+                <div className="console-settings-controls">
+                  <LanguageSelect />
+                </div>
+                <div className="console-settings-section">
+                  <Button asChild variant="outline">
+                    <Link to={connectionSettingsUrl} onClick={() => setSettingsOpen(false)}>
+                      <Cable size={15} aria-hidden="true" />
+                      {t("providers.hostedAccess.restore")}
+                    </Link>
+                  </Button>
+                  <p className="console-settings-feature-description">{t("shell.oomolKeyDescription")}</p>
+                </div>
+                <div className="console-settings-runtime">
+                  <div className="runtime-status">
+                    <StatusDot ok={!props.error} />
+                    <span>{props.error ? t("common.apiUnavailable") : t("common.runtimeReady")}</span>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={props.onRefresh} disabled={props.loading}>
+                    {props.loading ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}
+                    {t("common.refresh")}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </header>
 
-        <main className={mainClassName}>
-          {props.error ? <InlineError message={props.error} /> : null}
+          <main className={mainClassName}>
+            {props.error ? <InlineError message={props.error} /> : null}
 
-          <Routes>
-            <Route index element={<Navigate to="/overview" replace />} />
-            <Route path="/overview" element={<OverviewPage data={props.data} onRefresh={props.onRefresh} />} />
-            <Route path="/providers" element={<ProvidersPage data={props.data} onRefresh={props.onRefresh} />} />
-            <Route path="/marketplace" element={<Navigate to="/providers?onekey=1" replace />} />
-            <Route
-              path="/providers/:service"
-              element={<ProvidersPage data={props.data} onRefresh={props.onRefresh} />}
-            />
-            <Route path="/oauth-apps" element={<OAuthAppsPage data={props.data} onRefresh={props.onRefresh} />} />
-            <Route
-              path="/actions"
-              element={<ActionsPage data={props.data} gatewayUrl={clientBaseUrl} onRefresh={props.onRefresh} />}
-            />
-            <Route
-              path="/actions/:actionId"
-              element={<ActionsPage data={props.data} gatewayUrl={clientBaseUrl} onRefresh={props.onRefresh} />}
-            />
-            <Route
-              path="/runs"
-              element={<RunsPage initialRuns={props.data.runs} nextCursor={props.data.runsNextCursor} />}
-            />
-            <Route path="/approvals" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
-            <Route path="/approvals/:approvalId" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
-            <Route path="/pact" element={<PactPage onRefresh={props.onRefresh} />} />
-            <Route
-              path="/access"
-              element={
-                <AccessPage
-                  providers={props.data.providers}
-                  connections={props.data.connections}
-                  tokens={props.data.runtimeTokens}
-                  policy={props.data.runtimePolicy ?? emptyData.runtimePolicy!}
-                  onRefresh={props.onRefresh}
-                />
-              }
-            />
-            <Route
-              path="/resources"
-              element={<ResourcesPage gatewayUrl={clientGatewayUrl} onGatewayUrlChange={setClientGatewayUrl} />}
-            />
-            <Route path="*" element={<Navigate to="/overview" replace />} />
-          </Routes>
-        </main>
+            <Routes>
+              <Route index element={<Navigate to="/overview" replace />} />
+              <Route path="/overview" element={<OverviewPage data={props.data} onRefresh={props.onRefresh} />} />
+              <Route path="/providers" element={<ProvidersPage data={props.data} onRefresh={props.onRefresh} />} />
+              <Route path="/marketplace" element={<Navigate to="/providers?onekey=1" replace />} />
+              <Route
+                path="/providers/:service"
+                element={<ProvidersPage data={props.data} onRefresh={props.onRefresh} />}
+              />
+              <Route path="/oauth-apps" element={<OAuthAppsPage data={props.data} onRefresh={props.onRefresh} />} />
+              <Route
+                path="/actions"
+                element={<ActionsPage data={props.data} gatewayUrl={clientBaseUrl} onRefresh={props.onRefresh} />}
+              />
+              <Route
+                path="/actions/:actionId"
+                element={<ActionsPage data={props.data} gatewayUrl={clientBaseUrl} onRefresh={props.onRefresh} />}
+              />
+              <Route
+                path="/runs"
+                element={<RunsPage initialRuns={props.data.runs} nextCursor={props.data.runsNextCursor} />}
+              />
+              <Route path="/approvals" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
+              <Route path="/approvals/:approvalId" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
+              <Route path="/pact" element={<PactPage onRefresh={props.onRefresh} />} />
+              <Route
+                path="/access"
+                element={
+                  <AccessPage
+                    providers={props.data.providers}
+                    connections={props.data.connections}
+                    tokens={props.data.runtimeTokens}
+                    policy={props.data.runtimePolicy ?? emptyData.runtimePolicy!}
+                    onRefresh={props.onRefresh}
+                  />
+                }
+              />
+              <Route
+                path="/resources"
+                element={<ResourcesPage gatewayUrl={clientGatewayUrl} onGatewayUrlChange={setClientGatewayUrl} />}
+              />
+              <Route path="*" element={<Navigate to="/overview" replace />} />
+            </Routes>
+          </main>
+        </div>
+        <Toaster
+          position="top-right"
+          closeButton
+          containerAriaLabel={t("shell.notifications")}
+          toastOptions={{ closeButtonAriaLabel: t("common.close") }}
+        />
       </div>
-      <Toaster
-        position="top-right"
-        closeButton
-        containerAriaLabel={t("shell.notifications")}
-        toastOptions={{ closeButtonAriaLabel: t("common.close") }}
-      />
-    </div>
+    </TooltipProvider>
   );
 }
 
@@ -596,6 +708,89 @@ export function UnlockView(props: UnlockViewProps): ReactNode {
         ) : null}
       </section>
     </main>
+  );
+}
+
+function ShellNavItem(props: {
+  item: NavItem;
+  label: string;
+  badge: number;
+  rail: boolean;
+  onNavigate(): void;
+}): ReactNode {
+  const Icon = props.item.icon;
+  // A static className: Radix Slot (TooltipTrigger asChild) stringifies the
+  // function form NavLink accepts, which would drop the nav-item styles.
+  const location = useLocation();
+  const isActive = matchPath({ path: props.item.path, end: false }, location.pathname) !== null;
+  const link = (
+    <NavLink className={isActive ? "nav-item active" : "nav-item"} to={props.item.path} onClick={props.onNavigate}>
+      <Icon size={16} />
+      <span className="nav-item-label">{props.label}</span>
+      {props.badge > 0 ? <span className="nav-badge">{props.badge}</span> : null}
+    </NavLink>
+  );
+  if (!props.rail) {
+    return link;
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent side="right">{props.label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ShellFooterButton(props: { icon: LucideIcon; label: string; rail: boolean; onClick(): void }): ReactNode {
+  const Icon = props.icon;
+  const button = (
+    <button type="button" className="nav-item sidebar-footer-item" onClick={props.onClick}>
+      <Icon size={16} />
+      <span className="nav-item-label">{props.label}</span>
+    </button>
+  );
+  if (!props.rail) {
+    return button;
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="right">{props.label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+// The footer's compact theme affordance: one click advances auto → light →
+// dark, the icon shows the current mode.
+function ThemeMenuButton(props: { theme: ThemeMode; onThemeChange(theme: ThemeMode): void; rail: boolean }): ReactNode {
+  const t = useTranslate();
+  const index = Math.max(
+    0,
+    themeOptions.findIndex((option) => option.value === props.theme),
+  );
+  const current = themeOptions[index];
+  const next = themeOptions[(index + 1) % themeOptions.length];
+  const Icon = current.icon;
+  const label = `${t("shell.theme")}: ${t(current.labelKey)}`;
+  const button = (
+    <button
+      type="button"
+      className="nav-item sidebar-footer-item"
+      onClick={() => props.onThemeChange(next.value)}
+      aria-label={label}
+    >
+      <Icon size={16} />
+      <span className="nav-item-label">{label}</span>
+    </button>
+  );
+  if (!props.rail) {
+    return button;
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 

@@ -60,7 +60,8 @@
   overflow-x: auto;
 }
 
-tr[data-highlight] {
+tr[data-highlight],
+li[data-highlight] {
   outline: 2px solid color-mix(in oklab, var(--warning) 50%, transparent);
   outline-offset: -2px;
 }

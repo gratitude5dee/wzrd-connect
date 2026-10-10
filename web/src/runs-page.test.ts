@@ -63,20 +63,24 @@ describe("RunsPage", () => {
     expect(markup).toContain("runs.noRunsTitle");
   });
 
-  it("renders six audit columns and connection context", () => {
+  it("renders the compact audit columns and expands to the full context", () => {
     const auditRun = {
       ...run("execution-1", "gmail.search_threads", "gmail"),
       connectionProfile: { displayName: "Finance workspace" },
       outputSummary: { threadCount: 2 },
     };
     const markup = renderToStaticMarkup(
-      createElement(MemoryRouter, null, createElement(RunsPage, { initialRuns: [auditRun] })),
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(RunsPage, { initialRuns: [auditRun], initialExpanded: [auditRun.id] }),
+      ),
     );
 
-    for (const heading of ["action", "context", "status", "timing", "input", "result"]) {
+    for (const heading of ["action", "context", "status", "timing", "input"]) {
       expect(markup).toContain(`runs.table.${heading}`);
     }
-    const headings = ["timing", "status", "action", "context", "input", "result"].map((heading) =>
+    const headings = ["action", "context", "input", "timing", "status"].map((heading) =>
       markup.indexOf(`runs.table.${heading}`),
     );
     expect(headings).toEqual([...headings].sort((left, right) => left - right));
@@ -85,17 +89,25 @@ describe("RunsPage", () => {
     expect(markup).toContain("execution-1");
   });
 
-  it("offers inline expansion for long successful results", () => {
+  it("keeps long results collapsed until the row is expanded", () => {
     const auditRun = {
       ...run("execution-long", "hackernews.get_latest_posts", "hackernews"),
       outputSummary: { hits: Array.from({ length: 20 }, (_, index) => ({ id: index, title: `Story ${index}` })) },
     };
-    const markup = renderToStaticMarkup(
+    const collapsed = renderToStaticMarkup(
       createElement(MemoryRouter, null, createElement(RunsPage, { initialRuns: [auditRun] })),
     );
+    const expanded = renderToStaticMarkup(
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(RunsPage, { initialRuns: [auditRun], initialExpanded: [auditRun.id] }),
+      ),
+    );
 
-    expect(markup).toContain('aria-label="runs.expandResult"');
-    expect(markup).toContain('aria-expanded="false"');
+    expect(collapsed).not.toContain("run-result-detail");
+    expect(expanded).toContain("run-result-detail");
+    expect(expanded).toContain("Story 0");
   });
 
   it("renders both the stable error code and safe error message", () => {
@@ -106,14 +118,18 @@ describe("RunsPage", () => {
       errorMessage: "The provider rate limit was reached.",
     };
     const markup = renderToStaticMarkup(
-      createElement(MemoryRouter, null, createElement(RunsPage, { initialRuns: [failedRun] })),
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(RunsPage, { initialRuns: [failedRun], initialExpanded: [failedRun.id] }),
+      ),
     );
 
     expect(markup).toContain("rate_limited");
     expect(markup).toContain("The provider rate limit was reached.");
   });
 
-  it("renders policy and stored token context without adding a table column", () => {
+  it("renders policy and stored token context inside the expanded detail", () => {
     const auditRun: RunLog = {
       ...run("execution-policy", "github.delete_repository", "github"),
       ok: false,
@@ -124,7 +140,11 @@ describe("RunsPage", () => {
       },
     };
     const markup = renderToStaticMarkup(
-      createElement(MemoryRouter, null, createElement(RunsPage, { initialRuns: [auditRun] })),
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(RunsPage, { initialRuns: [auditRun], initialExpanded: [auditRun.id] }),
+      ),
     );
 
     expect(markup).toContain("runs.policyBlocked");
