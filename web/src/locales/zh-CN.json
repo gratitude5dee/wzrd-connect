@@ -102,6 +102,9 @@
       },
       "connections": {
         "title": "连接"
+      },
+      "welcome": {
+        "title": "设置向导"
       }
     },
     "navGroup": {
@@ -122,7 +125,8 @@
     "settingsDescription": "管理语言、外观、连接与运行时。",
     "oomolKeyDescription": "查看支持的服务与优惠，再选择接入或管理 Key。",
     "notifications": "通知",
-    "menu": "菜单"
+    "menu": "菜单",
+    "setupGuide": "设置向导"
   },
   "unlock": {
     "token": "管理员 token",
@@ -1249,6 +1253,77 @@
       "registration": "注册",
       "needsReauthorization": "需要重新授权",
       "identityOnly": "仅身份"
+    }
+  },
+  "welcome": {
+    "stepsLabel": "设置步骤",
+    "steps": {
+      "1": "添加代理",
+      "2": "连接服务",
+      "3": "完成"
+    },
+    "skip": "跳过设置",
+    "continue": "继续",
+    "back": "返回",
+    "agent": {
+      "title": "添加代理",
+      "existing": "已有代理 — 继续连接服务。",
+      "description": "为 AI 代理授予连接的受限访问权限，选择它的接入方式。",
+      "createFailed": "无法创建代理令牌。",
+      "creating": "正在创建代理令牌…",
+      "chooseAnother": "选择其他方式",
+      "waiting": "等待代理的首次调用…",
+      "firstCall": "已收到首次调用 — 进入下一步。",
+      "mcp": {
+        "name": "MCP 客户端",
+        "description": "Claude、Cursor 或任何支持 MCP 的客户端 — 将 WZRD Connect 添加为自定义连接器。",
+        "title": "将 WZRD Connect 添加到你的 MCP 客户端",
+        "lead": "MCP 代理通过此连接器工作，使用自己的令牌登录。",
+        "serverUrl": "服务器地址",
+        "copyUrl": "复制服务器地址",
+        "config": "客户端配置",
+        "copyConfig": "复制客户端配置",
+        "steps": {
+          "add": "在 MCP 客户端中选择添加自定义连接器。",
+          "paste": "粘贴服务器地址，或将配置片段写入客户端设置文件。",
+          "call": "客户端使用令牌调用 WZRD Connect — 首次调用会自动推进本向导。"
+        }
+      },
+      "token": {
+        "name": "API 令牌",
+        "description": "为你自己的客户端、脚本或工具创建运行时令牌 — 调用按令牌记录。",
+        "title": "你的代理令牌",
+        "lead": "在 /v1 调用中作为 Bearer 凭证发送，或写入客户端配置。",
+        "secret": "令牌",
+        "shownOnce": "仅此一次显示 — 请立即复制并妥善保存。"
+      },
+      "pact": {
+        "name": "PACT 委托",
+        "description": "通过设备流链接向 PACT Brand 委托受限访问。",
+        "title": "PACT 委托",
+        "lead": "PACT 页面签发 Brand 用于委托访问的设备流链接。",
+        "hint": "身份、注册与 Brand 连接都在 PACT 页面管理 — 设备流授权也在那里完成。",
+        "open": "打开 PACT 页面"
+      }
+    },
+    "service": {
+      "title": "连接服务",
+      "description": "从目录中添加账号 — 连接流程以权限确认结束。",
+      "connected": "已连接 {{count}} 个",
+      "browseAll": "浏览完整服务目录",
+      "skip": "暂时跳过",
+      "finish": "完成"
+    },
+    "done": {
+      "title": "设置完成",
+      "description": "WZRD Connect 托管你的服务并为代理授予受限访问 — 一切尽在活动日志。",
+      "agentReady": "代理已就绪",
+      "agentSkipped": "还没有代理 — 可随时在代理页面添加。",
+      "connectionsReady": "已连接 {{count}} 个服务",
+      "connectionsSkipped": "还没有服务 — 可随时从服务商页面连接。",
+      "openOverview": "打开概览",
+      "connectAnother": "再连接一个服务",
+      "setAccess": "设置代理权限"
     }
   }
 }

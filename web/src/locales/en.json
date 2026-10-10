@@ -102,6 +102,9 @@
       },
       "connections": {
         "title": "Connections"
+      },
+      "welcome": {
+        "title": "Setup guide"
       }
     },
     "navGroup": {
@@ -122,7 +125,8 @@
     "settingsDescription": "Manage language, appearance, connections, and runtime.",
     "oomolKeyDescription": "Explore supported services and offers, then connect or manage your key.",
     "notifications": "Notifications",
-    "menu": "Menu"
+    "menu": "Menu",
+    "setupGuide": "Setup guide"
   },
   "unlock": {
     "token": "Admin token",
@@ -1249,6 +1253,77 @@
       "registration": "Registration",
       "needsReauthorization": "Needs reauthorization",
       "identityOnly": "Identity only"
+    }
+  },
+  "welcome": {
+    "stepsLabel": "Setup steps",
+    "steps": {
+      "1": "Add an agent",
+      "2": "Connect a service",
+      "3": "Done"
+    },
+    "skip": "Skip setup",
+    "continue": "Continue",
+    "back": "Back",
+    "agent": {
+      "title": "Add an agent",
+      "existing": "You already have an agent — continue to connect a service.",
+      "description": "Give an AI agent scoped access to your connections. Pick how it connects.",
+      "createFailed": "Could not create the agent token.",
+      "creating": "Creating the agent token…",
+      "chooseAnother": "Choose another way",
+      "waiting": "Waiting for the agent's first call…",
+      "firstCall": "First call received — moving on.",
+      "mcp": {
+        "name": "MCP client",
+        "description": "Claude, Cursor, or any client that speaks MCP — add WZRD Connect as a custom connector.",
+        "title": "Add WZRD Connect to your MCP client",
+        "lead": "An MCP agent works through this connector, signed in with its own token.",
+        "serverUrl": "Server",
+        "copyUrl": "Copy server address",
+        "config": "Client config",
+        "copyConfig": "Copy client config",
+        "steps": {
+          "add": "In your MCP client, choose Add custom connector.",
+          "paste": "Paste the server address, or add the config snippet to the client's settings file.",
+          "call": "The client calls WZRD Connect with its token — the first call advances this guide automatically."
+        }
+      },
+      "token": {
+        "name": "API token",
+        "description": "A runtime token for your own client, script, or tool — calls are logged per token.",
+        "title": "Your agent's token",
+        "lead": "Send it as a Bearer credential on /v1 calls, or put it in the client's config.",
+        "secret": "Token",
+        "shownOnce": "Shown once — copy it now and store it somewhere safe."
+      },
+      "pact": {
+        "name": "PACT delegation",
+        "description": "Delegate scoped access to a PACT Brand over the device-flow link.",
+        "title": "PACT delegation",
+        "lead": "The PACT page issues the device-flow link a Brand uses to delegate access.",
+        "hint": "Identity, registrations, and Brand connections live on the PACT page — the device-flow consent happens there.",
+        "open": "Open PACT page"
+      }
+    },
+    "service": {
+      "title": "Connect a service",
+      "description": "Add an account from the catalog — the connect flow ends with the permission confirm.",
+      "connected": "{{count}} connected",
+      "browseAll": "Browse the full provider catalog",
+      "skip": "Skip for now",
+      "finish": "Finish"
+    },
+    "done": {
+      "title": "Setup complete",
+      "description": "WZRD Connect is holding your services and handing agents scoped access — everything lands in the activity log.",
+      "agentReady": "Agent ready",
+      "agentSkipped": "No agent yet — add one anytime on the Agents page.",
+      "connectionsReady": "{{count}} service(s) connected",
+      "connectionsSkipped": "No services yet — connect one anytime from Providers.",
+      "openOverview": "Open Overview",
+      "connectAnother": "Connect another service",
+      "setAccess": "Set agent access"
     }
   }
 }

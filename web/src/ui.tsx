@@ -21,6 +21,7 @@ import {
   Fingerprint,
   Home,
   Bot,
+  GraduationCap,
   Loader2,
   LogOut,
   Monitor,
@@ -47,7 +48,7 @@ import { normalizeGatewayUrl } from "./client-onboarding";
 import { ConnectionPage } from "./connection-page";
 import { ConnectionsPage } from "./connections-page";
 import { persistLang, supportedLangs } from "./i18n";
-import { createOverviewSummary, emptyData } from "./model";
+import { createOverviewSummary, emptyData, isUsableCredentialConnection } from "./model";
 import { OAuthAppsPage } from "./oauth-apps-page";
 import { OverviewPage } from "./overview-page";
 import { PactPage } from "./pact-page";
@@ -56,6 +57,8 @@ import { ResourcesPage } from "./resources-page";
 import { InlineError, StatusDot } from "./shared-ui";
 import { readSidebarExpanded, writeSidebarExpanded } from "./sidebar-state";
 import { useThemeMode } from "./theme";
+import { WelcomePage } from "./welcome-page";
+import { readWelcomeDismissed } from "./welcome-state";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -449,6 +452,13 @@ function AppShell(props: {
     .filter(Boolean)
     .join(" ");
   const headerDetail = useMemo(() => headerDetailForSection(section, props.data), [section, props.data]);
+  // First-run: a truly empty install (no connections, no agent tokens) lands
+  // on /welcome once — until the guide is dismissed it stays the landing.
+  const installEmpty =
+    props.data.runtimeTokens.length === 0 &&
+    !props.data.connections.some((connection) => connection.id != null && isUsableCredentialConnection(connection));
+  const firstRunWelcome =
+    installEmpty && !readWelcomeDismissed() && (location.pathname === "/" || location.pathname === "/overview");
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -577,6 +587,15 @@ function AppShell(props: {
               ) : null}
             </div>
             <div className="shell-header-actions">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("shell.setupGuide")}
+                title={t("shell.setupGuide")}
+                onClick={() => navigate("/welcome")}
+              >
+                <GraduationCap size={18} aria-hidden="true" />
+              </Button>
               {props.loading ? (
                 <div className="loading-panel page-loading">
                   <Loader2 className="spin" size={16} />
@@ -630,6 +649,7 @@ function AppShell(props: {
           <main className={mainClassName}>
             {props.error ? <InlineError message={props.error} /> : null}
 
+            {firstRunWelcome ? <Navigate to="/welcome" replace /> : null}
             <Routes>
               <Route index element={<Navigate to="/overview" replace />} />
               <Route path="/overview" element={<OverviewPage data={props.data} onRefresh={props.onRefresh} />} />
@@ -679,6 +699,10 @@ function AppShell(props: {
               <Route path="/approvals" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
               <Route path="/approvals/:approvalId" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
               <Route path="/pact" element={<PactPage onRefresh={props.onRefresh} />} />
+              <Route
+                path="/welcome"
+                element={<WelcomePage data={props.data} gatewayUrl={clientBaseUrl} onRefresh={props.onRefresh} />}
+              />
               <Route
                 path="/agents"
                 element={
@@ -994,6 +1018,9 @@ function headingForPath(pathname: string): string {
   }
   if (section === "pact") {
     return "pact";
+  }
+  if (section === "welcome") {
+    return "welcome";
   }
   if (section === "agents" || section === "access") {
     return "agents";

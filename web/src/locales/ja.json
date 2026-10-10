@@ -102,6 +102,9 @@
       },
       "connections": {
         "title": "接続"
+      },
+      "welcome": {
+        "title": "セットアップガイド"
       }
     },
     "navGroup": {
@@ -122,7 +125,8 @@
     "settingsDescription": "言語、外観、接続、ランタイムを管理します。",
     "oomolKeyDescription": "対応サービスと割引を確認し、キーの接続や管理を選択できます。",
     "notifications": "通知",
-    "menu": "メニュー"
+    "menu": "メニュー",
+    "setupGuide": "セットアップガイド"
   },
   "unlock": {
     "token": "管理者 token",
@@ -1249,6 +1253,77 @@
       "registration": "登録",
       "needsReauthorization": "再認証が必要",
       "identityOnly": "アイデンティティのみ"
+    }
+  },
+  "welcome": {
+    "stepsLabel": "セットアップ手順",
+    "steps": {
+      "1": "エージェントを追加",
+      "2": "サービスを接続",
+      "3": "完了"
+    },
+    "skip": "セットアップをスキップ",
+    "continue": "続行",
+    "back": "戻る",
+    "agent": {
+      "title": "エージェントを追加",
+      "existing": "エージェントは既にあります — サービスの接続へ進みます。",
+      "description": "AI エージェントに接続へのスコープ付きアクセスを付与します。接続方法を選んでください。",
+      "createFailed": "エージェントトークンを作成できませんでした。",
+      "creating": "エージェントトークンを作成中…",
+      "chooseAnother": "別の方法を選ぶ",
+      "waiting": "エージェントの最初の呼び出しを待機中…",
+      "firstCall": "最初の呼び出しを受信 — 次へ進みます。",
+      "mcp": {
+        "name": "MCP クライアント",
+        "description": "Claude、Cursor など MCP 対応クライアント — WZRD Connect をカスタムコネクタとして追加。",
+        "title": "MCP クライアントに WZRD Connect を追加",
+        "lead": "MCP エージェントはこのコネクタ経由で、固有のトークンでサインインします。",
+        "serverUrl": "サーバー",
+        "copyUrl": "サーバーアドレスをコピー",
+        "config": "クライアント設定",
+        "copyConfig": "クライアント設定をコピー",
+        "steps": {
+          "add": "MCP クライアントでカスタムコネクタの追加を選択します。",
+          "paste": "サーバーアドレスを貼るか、設定スニペットをクライアントの設定ファイルに追加します。",
+          "call": "クライアントはトークンで WZRD Connect を呼び出します — 最初の呼び出しでこのガイドが自動で進みます。"
+        }
+      },
+      "token": {
+        "name": "API トークン",
+        "description": "独自のクライアント・スクリプト・ツール用のランタイムトークン — 呼び出しはトークンごとに記録。",
+        "title": "エージェントのトークン",
+        "lead": "/v1 呼び出しで Bearer 資格情報として送るか、クライアント設定に記述します。",
+        "secret": "トークン",
+        "shownOnce": "一度だけ表示されます — 今すぐコピーして安全な場所に保存してください。"
+      },
+      "pact": {
+        "name": "PACT 委任",
+        "description": "デバイスフローリンクで PACT Brand にスコープ付きアクセスを委任。",
+        "title": "PACT 委任",
+        "lead": "PACT ページが Brand による委任用のデバイスフローリンクを発行します。",
+        "hint": "ID・登録・Brand 接続は PACT ページで管理 — デバイスフロー同意もそこで行います。",
+        "open": "PACT ページを開く"
+      }
+    },
+    "service": {
+      "title": "サービスを接続",
+      "description": "カタログからアカウントを追加 — 接続フローは権限確認で完了します。",
+      "connected": "{{count}} 件接続済み",
+      "browseAll": "プロバイダーカタログをすべて見る",
+      "skip": "今はスキップ",
+      "finish": "完了"
+    },
+    "done": {
+      "title": "セットアップ完了",
+      "description": "WZRD Connect がサービスを保持し、エージェントにスコープ付きアクセスを付与します — すべてアクティビティログに記録されます。",
+      "agentReady": "エージェント準備完了",
+      "agentSkipped": "まだエージェントがありません — Agents ページでいつでも追加できます。",
+      "connectionsReady": "{{count}} 件のサービスを接続済み",
+      "connectionsSkipped": "まだサービスがありません — Providers からいつでも接続できます。",
+      "openOverview": "概要を開く",
+      "connectAnother": "別のサービスを接続",
+      "setAccess": "エージェントのアクセスを設定"
     }
   }
 }

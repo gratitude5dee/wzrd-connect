@@ -102,6 +102,9 @@
       },
       "connections": {
         "title": "Connexions"
+      },
+      "welcome": {
+        "title": "Guide de configuration"
       }
     },
     "navGroup": {
@@ -122,7 +125,8 @@
     "settingsDescription": "Gérer la langue, l’apparence, les connexions et le runtime.",
     "oomolKeyDescription": "Découvrez les services et les offres, puis connectez ou gérez votre clé.",
     "notifications": "Notifications",
-    "menu": "Menu"
+    "menu": "Menu",
+    "setupGuide": "Guide de configuration"
   },
   "unlock": {
     "token": "Token administrateur",
@@ -1249,6 +1253,77 @@
       "registration": "Enregistrement",
       "needsReauthorization": "Réautorisation requise",
       "identityOnly": "Identité seulement"
+    }
+  },
+  "welcome": {
+    "stepsLabel": "Étapes de configuration",
+    "steps": {
+      "1": "Ajouter un agent",
+      "2": "Connecter un service",
+      "3": "Terminé"
+    },
+    "skip": "Ignorer la configuration",
+    "continue": "Continuer",
+    "back": "Retour",
+    "agent": {
+      "title": "Ajouter un agent",
+      "existing": "Vous avez déjà un agent — continuez pour connecter un service.",
+      "description": "Donnez à un agent IA un accès limité à vos connexions. Choisissez comment il se connecte.",
+      "createFailed": "Impossible de créer le jeton de l'agent.",
+      "creating": "Création du jeton de l'agent…",
+      "chooseAnother": "Choisir une autre méthode",
+      "waiting": "En attente du premier appel de l'agent…",
+      "firstCall": "Premier appel reçu — on continue.",
+      "mcp": {
+        "name": "Client MCP",
+        "description": "Claude, Cursor ou tout client parlant MCP — ajoutez WZRD Connect comme connecteur personnalisé.",
+        "title": "Ajouter WZRD Connect à votre client MCP",
+        "lead": "Un agent MCP passe par ce connecteur, connecté avec son propre jeton.",
+        "serverUrl": "Serveur",
+        "copyUrl": "Copier l'adresse du serveur",
+        "config": "Configuration client",
+        "copyConfig": "Copier la configuration client",
+        "steps": {
+          "add": "Dans votre client MCP, choisissez Ajouter un connecteur personnalisé.",
+          "paste": "Collez l'adresse du serveur, ou ajoutez l'extrait de configuration au fichier de réglages du client.",
+          "call": "Le client appelle WZRD Connect avec son jeton — le premier appel fait avancer ce guide automatiquement."
+        }
+      },
+      "token": {
+        "name": "Jeton API",
+        "description": "Un jeton d'exécution pour votre client, script ou outil — les appels sont journalisés par jeton.",
+        "title": "Le jeton de votre agent",
+        "lead": "Envoyez-le comme identifiant Bearer sur les appels /v1, ou placez-le dans la configuration du client.",
+        "secret": "Jeton",
+        "shownOnce": "Affiché une seule fois — copiez-le maintenant et conservez-le en lieu sûr."
+      },
+      "pact": {
+        "name": "Délégation PACT",
+        "description": "Déléguez un accès limité à un Brand PACT via le lien device-flow.",
+        "title": "Délégation PACT",
+        "lead": "La page PACT émet le lien device-flow qu'un Brand utilise pour déléguer l'accès.",
+        "hint": "Identité, enregistrements et connexions Brand vivent sur la page PACT — le consentement device-flow s'y déroule.",
+        "open": "Ouvrir la page PACT"
+      }
+    },
+    "service": {
+      "title": "Connecter un service",
+      "description": "Ajoutez un compte depuis le catalogue — la connexion se termine par la confirmation des permissions.",
+      "connected": "{{count}} connecté(s)",
+      "browseAll": "Parcourir tout le catalogue",
+      "skip": "Ignorer pour l'instant",
+      "finish": "Terminer"
+    },
+    "done": {
+      "title": "Configuration terminée",
+      "description": "WZRD Connect héberge vos services et donne aux agents un accès limité — tout arrive dans le journal d'activité.",
+      "agentReady": "Agent prêt",
+      "agentSkipped": "Pas encore d'agent — ajoutez-en un à tout moment sur la page Agents.",
+      "connectionsReady": "{{count}} service(s) connecté(s)",
+      "connectionsSkipped": "Pas encore de service — connectez-en un à tout moment depuis Providers.",
+      "openOverview": "Ouvrir l'aperçu",
+      "connectAnother": "Connecter un autre service",
+      "setAccess": "Définir l'accès de l'agent"
     }
   }
 }

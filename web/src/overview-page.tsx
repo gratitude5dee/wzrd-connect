@@ -4,11 +4,12 @@ import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
-import { Activity, ArrowRight, ArrowUpRight, Cable, RefreshCw, TerminalSquare } from "lucide-react";
-import { Link } from "react-router";
+import { Activity, ArrowRight, ArrowUpRight, Cable, CheckCircle2, RefreshCw, TerminalSquare } from "lucide-react";
+import { Link, useSearchParams } from "react-router";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { createOverviewSummary, sortProviders } from "./model";
 import { EmptyState, ProviderIcon } from "./shared-ui";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -39,6 +40,10 @@ const callTrendColors = ["var(--chart-1)", "var(--chart-3)", "var(--chart-4)", "
 
 export function OverviewPage(props: OverviewPageProps): ReactNode {
   const t = useTranslate();
+  const [searchParams] = useSearchParams();
+  // `?added` — the welcome flow's done step lands here carrying the new
+  // connection; same success banner the connections page shows.
+  const addedId = searchParams.get("added") ?? undefined;
   const summary = createOverviewSummary(props.data);
   const callTrend = createCallTrend(props.data);
   const recentCalls = createRecentCalls(props.data);
@@ -80,6 +85,17 @@ export function OverviewPage(props: OverviewPageProps): ReactNode {
 
   return (
     <div className="page-stack overview-page">
+      {addedId ? (
+        <Alert variant="success">
+          <CheckCircle2 size={16} />
+          <AlertDescription>
+            {t("connections.added.success")}{" "}
+            <Link className="connection-added-link" to="/agents">
+              {t("connections.added.setAccess")}
+            </Link>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <Card className="runtime-strip">
         <div>
           <strong>{t("overview.runtimeReady")}</strong>
