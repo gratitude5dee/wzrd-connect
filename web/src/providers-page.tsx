@@ -150,7 +150,7 @@ interface ProviderCatalogProps {
   onStatusFilterChange?(value: ProviderStatusFilter): void;
 }
 
-interface ConnectionFormProps {
+export interface ConnectionFormProps {
   provider: ProviderDefinition;
   auth: AuthDefinition;
   connectionName: string;
@@ -178,7 +178,7 @@ interface ConnectionManagerProps {
   onNewConnectionNameChange(connectionName: string): void;
 }
 
-type OAuthClientMode = "configured" | "manual";
+export type OAuthClientMode = "configured" | "manual";
 
 export interface ManualOAuthClientValues {
   clientId: string;
@@ -1483,7 +1483,7 @@ export function startOAuthRefreshPolling(onRefresh: () => void): () => void {
   return () => clearInterval(interval);
 }
 
-function initialAuthType(
+export function initialAuthType(
   provider: ProviderDefinition,
   connection: AppData["connections"][number] | undefined,
 ): AuthDefinition["type"] | undefined {
@@ -1504,7 +1504,7 @@ function providerAuthTypeLabels(provider: ProviderDefinition, t: (key: string) =
   });
 }
 
-function authTypeLabel(authType: string, t: (key: string) => string): string {
+export function authTypeLabel(authType: string, t: (key: string) => string): string {
   if (authType === "api_key") return t("providers.authLabels.apiKey");
   if (authType === "oauth2") return t("providers.authLabels.oauth");
   if (authType === "custom_credential") return t("providers.authLabels.custom");
@@ -1722,7 +1722,7 @@ function UnavailableProviderConnection(props: {
   );
 }
 
-function ConnectionForm(props: ConnectionFormProps): ReactNode {
+export function ConnectionForm(props: ConnectionFormProps): ReactNode {
   const t = useTranslate();
   const remote = props.auth.type === "oauth2" && usesSaasOAuth(props.connection, props.oauthConfig);
   const [pending, setPending] = useState(false);

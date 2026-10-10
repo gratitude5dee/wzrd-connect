@@ -44,7 +44,8 @@
     "docs": "接続ガイド",
     "approvals": "承認",
     "pact": "PACT",
-    "agents": "エージェント"
+    "agents": "エージェント",
+    "connections": "接続"
   },
   "shell": {
     "invalidUnlockToken": "有効な管理者 token を入力してコンソールをロック解除してください。",
@@ -95,6 +96,9 @@
       },
       "agents": {
         "title": "エージェント"
+      },
+      "connections": {
+        "title": "接続"
       }
     },
     "navGroup": {
@@ -1177,6 +1181,56 @@
     "defaults": {
       "title": "既定ポリシー",
       "description": "すべてのエージェントに適用されるデプロイメントおよびランタイム ルール。"
+    }
+  },
+  "connections": {
+    "title": "接続",
+    "description": "エージェントが利用できる設定済みの接続。",
+    "connect": "接続",
+    "browseProviders": "プロバイダーを参照",
+    "back": "接続一覧に戻る",
+    "saveFailed": "アクセス変更の保存に失敗しました。",
+    "columns": {
+      "service": "サービス",
+      "account": "アカウント",
+      "agents": "エージェント"
+    },
+    "empty": {
+      "title": "まだ接続がありません",
+      "description": "プロバイダーを接続して、エージェントが使う認証情報を用意します。"
+    },
+    "missing": {
+      "title": "接続が見つかりません",
+      "description": "この接続は存在しなくなりました。"
+    },
+    "permissions": {
+      "title": "権限",
+      "description": "この接続のデフォルトのアクション。エージェントが上書きしない限り、変更はすべてのエージェントに適用されます。",
+      "empty": "このサービスにはアクションがありません。"
+    },
+    "agents": {
+      "title": "アクセス権のあるエージェント",
+      "empty": "この接続を使えるエージェントはいません。",
+      "noActions": "アクションなし"
+    },
+    "activity": {
+      "title": "最近のアクティビティ",
+      "viewAll": "すべてのアクティビティへ",
+      "empty": "この接続のリクエストはまだありません。"
+    },
+    "credentials": {
+      "title": "認証情報",
+      "description": "この接続の認証情報を管理します。"
+    },
+    "pact": {
+      "title": "PACT",
+      "brand": "ブランド",
+      "card": "カード",
+      "interface": "インターフェース",
+      "providerOrigin": "プロバイダーオリジン",
+      "registration": "登録",
+      "needsReauthorization": "再認証が必要",
+      "identityOnly": "アイデンティティのみ"
     }
   }
 }

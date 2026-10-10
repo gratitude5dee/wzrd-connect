@@ -44,7 +44,8 @@
     "docs": "接入指南",
     "approvals": "核准",
     "pact": "PACT",
-    "agents": "代理"
+    "agents": "代理",
+    "connections": "連線"
   },
   "shell": {
     "invalidUnlockToken": "請輸入有效的管理員權杖以解鎖控制台。",
@@ -95,6 +96,9 @@
       },
       "agents": {
         "title": "代理"
+      },
+      "connections": {
+        "title": "連線"
       }
     },
     "navGroup": {
@@ -1177,6 +1181,56 @@
     "defaults": {
       "title": "預設策略",
       "description": "套用於所有代理的部署與執行時規則。"
+    }
+  },
+  "connections": {
+    "title": "連線",
+    "description": "代理可使用的已設定連線。",
+    "connect": "連線",
+    "browseProviders": "瀏覽提供程式",
+    "back": "返回連線",
+    "saveFailed": "儲存存取變更失敗。",
+    "columns": {
+      "service": "服務",
+      "account": "帳戶",
+      "agents": "代理"
+    },
+    "empty": {
+      "title": "尚未連線任何服務",
+      "description": "連線提供程式，為代理提供可用的憑證。"
+    },
+    "missing": {
+      "title": "找不到連線",
+      "description": "此連線已不存在。"
+    },
+    "permissions": {
+      "title": "權限",
+      "description": "此連線的預設動作。除非代理另行覆寫，否則變更將套用至所有代理。",
+      "empty": "此服務沒有動作。"
+    },
+    "agents": {
+      "title": "具有存取權的代理",
+      "empty": "沒有代理可以使用此連線。",
+      "noActions": "無動作"
+    },
+    "activity": {
+      "title": "最近活動",
+      "viewAll": "查看全部活動",
+      "empty": "此連線尚無請求。"
+    },
+    "credentials": {
+      "title": "憑證",
+      "description": "管理此連線的憑證。"
+    },
+    "pact": {
+      "title": "PACT",
+      "brand": "品牌",
+      "card": "卡片",
+      "interface": "介面",
+      "providerOrigin": "提供程式來源",
+      "registration": "註冊",
+      "needsReauthorization": "需要重新授權",
+      "identityOnly": "僅身分"
     }
   }
 }

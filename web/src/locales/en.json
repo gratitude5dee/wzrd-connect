@@ -44,7 +44,8 @@
     "docs": "Connect clients",
     "approvals": "Approvals",
     "pact": "PACT",
-    "agents": "Agents"
+    "agents": "Agents",
+    "connections": "Connections"
   },
   "shell": {
     "invalidUnlockToken": "Enter a valid admin token to unlock the console.",
@@ -95,6 +96,9 @@
       },
       "agents": {
         "title": "Agents"
+      },
+      "connections": {
+        "title": "Connections"
       }
     },
     "navGroup": {
@@ -1177,6 +1181,56 @@
     "defaults": {
       "title": "Policy defaults",
       "description": "Deployment and runtime rules that apply to every agent."
+    }
+  },
+  "connections": {
+    "title": "Connections",
+    "description": "Configured connections your agents can use.",
+    "connect": "Connect",
+    "browseProviders": "Browse providers",
+    "back": "Back to connections",
+    "saveFailed": "Failed to save access changes.",
+    "columns": {
+      "service": "Service",
+      "account": "Account",
+      "agents": "Agents"
+    },
+    "empty": {
+      "title": "Nothing connected yet",
+      "description": "Connect a provider to give your agents credentials to work with."
+    },
+    "missing": {
+      "title": "Connection not found",
+      "description": "This connection no longer exists."
+    },
+    "permissions": {
+      "title": "Permissions",
+      "description": "Default actions for this connection. Changes apply to every agent unless that agent overrides them.",
+      "empty": "This service has no actions."
+    },
+    "agents": {
+      "title": "Agents with access",
+      "empty": "No agents can use this connection.",
+      "noActions": "No actions"
+    },
+    "activity": {
+      "title": "Recent activity",
+      "viewAll": "Go to all activity",
+      "empty": "No requests yet for this connection."
+    },
+    "credentials": {
+      "title": "Credentials",
+      "description": "Manage the credentials behind this connection."
+    },
+    "pact": {
+      "title": "PACT",
+      "brand": "Brand",
+      "card": "Card",
+      "interface": "Interface",
+      "providerOrigin": "Provider origin",
+      "registration": "Registration",
+      "needsReauthorization": "Needs reauthorization",
+      "identityOnly": "Identity only"
     }
   }
 }

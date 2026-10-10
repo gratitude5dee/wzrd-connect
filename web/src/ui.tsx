@@ -26,6 +26,7 @@ import {
   Monitor,
   Moon,
   PanelLeft,
+  Plug,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -43,6 +44,8 @@ import { ApiError, apiGet, apiPost } from "./api";
 import { ApprovalsPage } from "./approvals-page";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
 import { normalizeGatewayUrl } from "./client-onboarding";
+import { ConnectionPage } from "./connection-page";
+import { ConnectionsPage } from "./connections-page";
 import { persistLang, supportedLangs } from "./i18n";
 import { createOverviewSummary, emptyData } from "./model";
 import { OAuthAppsPage } from "./oauth-apps-page";
@@ -79,6 +82,7 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { path: "/overview", labelKey: "nav.overview", icon: Home },
       { path: "/providers", labelKey: "nav.providers", icon: Cable },
+      { path: "/connections", labelKey: "nav.connections", icon: Plug },
       { path: "/actions", labelKey: "nav.actions", icon: TerminalSquare },
       { path: "/activity", labelKey: "nav.activity", icon: Activity },
     ],
@@ -380,6 +384,7 @@ function headerDetailForSection(section: string | undefined, data: AppData): Hea
   switch (section) {
     case "overview":
     case "providers":
+    case "connections":
       return { key: "shell.detail.connected", count: summary.connectedCount };
     case "actions":
       return { key: "shell.detail.actions", count: summary.actionCount };
@@ -598,6 +603,11 @@ function AppShell(props: {
               <Route
                 path="/providers/:service"
                 element={<ProvidersPage data={props.data} onRefresh={props.onRefresh} />}
+              />
+              <Route path="/connections" element={<ConnectionsPage data={props.data} onRefresh={props.onRefresh} />} />
+              <Route
+                path="/connections/:connectionId"
+                element={<ConnectionPage data={props.data} onRefresh={props.onRefresh} />}
               />
               <Route path="/oauth-apps" element={<OAuthAppsPage data={props.data} onRefresh={props.onRefresh} />} />
               <Route
@@ -901,6 +911,9 @@ function headingForPath(pathname: string): string {
   const section = pathname.split("/").filter(Boolean)[0];
   if (section === "providers") {
     return "providers";
+  }
+  if (section === "connections") {
+    return "connections";
   }
   if (section === "marketplace") {
     return "marketplace";

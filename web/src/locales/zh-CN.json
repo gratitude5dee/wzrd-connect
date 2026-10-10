@@ -44,7 +44,8 @@
     "docs": "接入指南",
     "approvals": "审批",
     "pact": "PACT",
-    "agents": "代理"
+    "agents": "代理",
+    "connections": "连接"
   },
   "shell": {
     "invalidUnlockToken": "请输入有效的管理员 token 来解锁控制台。",
@@ -95,6 +96,9 @@
       },
       "agents": {
         "title": "代理"
+      },
+      "connections": {
+        "title": "连接"
       }
     },
     "navGroup": {
@@ -1177,6 +1181,56 @@
     "defaults": {
       "title": "默认策略",
       "description": "适用于所有代理的部署与运行时规则。"
+    }
+  },
+  "connections": {
+    "title": "连接",
+    "description": "代理可使用的已配置连接。",
+    "connect": "连接",
+    "browseProviders": "浏览提供程序",
+    "back": "返回连接",
+    "saveFailed": "保存访问更改失败。",
+    "columns": {
+      "service": "服务",
+      "account": "账户",
+      "agents": "代理"
+    },
+    "empty": {
+      "title": "尚未连接任何服务",
+      "description": "连接提供程序，为代理提供可用的凭据。"
+    },
+    "missing": {
+      "title": "未找到连接",
+      "description": "此连接已不存在。"
+    },
+    "permissions": {
+      "title": "权限",
+      "description": "此连接的默认操作。除非代理另行覆盖，否则更改将应用于所有代理。",
+      "empty": "此服务没有操作。"
+    },
+    "agents": {
+      "title": "具有访问权限的代理",
+      "empty": "没有代理可以使用此连接。",
+      "noActions": "无操作"
+    },
+    "activity": {
+      "title": "最近活动",
+      "viewAll": "查看全部活动",
+      "empty": "此连接暂无请求。"
+    },
+    "credentials": {
+      "title": "凭据",
+      "description": "管理此连接的凭据。"
+    },
+    "pact": {
+      "title": "PACT",
+      "brand": "品牌",
+      "card": "卡片",
+      "interface": "接口",
+      "providerOrigin": "提供程序来源",
+      "registration": "注册",
+      "needsReauthorization": "需要重新授权",
+      "identityOnly": "仅身份"
     }
   }
 }
