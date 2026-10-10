@@ -90,10 +90,23 @@
         "title": "PACT"
       }
     },
+    "navGroup": {
+      "operate": "Operate",
+      "custody": "Custody"
+    },
+    "detail": {
+      "connected": "{{count}} connected",
+      "actions": "{{count}} actions",
+      "recent": "{{count}} recent",
+      "pending": "{{count}} pending",
+      "tokens": "{{count}} tokens",
+      "configured": "{{count}} configured"
+    },
     "settings": "Settings",
     "settingsDescription": "Manage language, appearance, connections, and runtime.",
     "oomolKeyDescription": "Explore supported services and offers, then connect or manage your key.",
-    "notifications": "Notifications"
+    "notifications": "Notifications",
+    "menu": "Menu"
   },
   "unlock": {
     "token": "Admin token",

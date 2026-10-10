@@ -90,10 +90,23 @@
         "title": "PACT"
       }
     },
+    "navGroup": {
+      "operate": "操作",
+      "custody": "保管"
+    },
+    "detail": {
+      "connected": "{{count}} 个已连接",
+      "actions": "{{count}} 个操作",
+      "recent": "{{count}} 条最近记录",
+      "pending": "{{count}} 个待处理",
+      "tokens": "{{count}} 个令牌",
+      "configured": "{{count}} 个已配置"
+    },
     "settings": "设置",
     "settingsDescription": "管理语言、外观、连接与运行时。",
     "oomolKeyDescription": "查看支持的服务与优惠，再选择接入或管理 Key。",
-    "notifications": "通知"
+    "notifications": "通知",
+    "menu": "菜单"
   },
   "unlock": {
     "token": "管理员 token",

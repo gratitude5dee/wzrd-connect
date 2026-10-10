@@ -12,15 +12,33 @@ import { Check, Loader2, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import { apiDelete, apiGet, apiPost } from "./api";
+import { EmptyRows, Row, RowHeader, RowList } from "./components/row-list";
 import { compactJson, formatDate } from "./model";
-import { Badge, EmptyState, InlineError } from "./shared-ui";
+import { Badge, InlineError } from "./shared-ui";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+
+// The column schema the inbox and history rows share: fixed-width cells fold
+// away on narrow widths, and the last cell carries the decision or outcome.
+const APPROVAL_CELLS = {
+  caller: "hidden w-32 shrink-0 truncate text-muted-foreground lg:block",
+  preview: "hidden w-56 shrink-0 truncate text-muted-foreground xl:block",
+  operation: "w-24 shrink-0",
+  expires: "hidden w-28 shrink-0 text-right text-muted-foreground tabular-nums md:block",
+  action: "flex w-40 shrink-0 items-center justify-end",
+};
+
+const GRANT_CELLS = {
+  connection: "hidden w-44 shrink-0 truncate text-muted-foreground md:block",
+  uses: "w-16 shrink-0 text-right text-muted-foreground tabular-nums",
+  operation: "w-24 shrink-0",
+  expires: "hidden w-28 shrink-0 text-right text-muted-foreground tabular-nums md:block",
+  action: "flex w-28 shrink-0 justify-end",
+};
 
 type ApprovalTab = "inbox" | "history" | "grants";
 
@@ -158,13 +176,12 @@ export function ApprovalsPage(props: ApprovalsPageProps): ReactNode {
             <div className="loading-panel">
               <Loader2 className="spin" size={16} /> {t("common.loadingRuntimeData")}
             </div>
-          ) : inbox.length === 0 ? (
-            <EmptyState title={t("approvals.inboxEmpty")} description={t("approvals.inboxEmptyHint")} />
           ) : (
             <ApprovalTable
               records={inbox}
               highlightId={deepLinkId}
               pendingOnly
+              empty={`${t("approvals.inboxEmpty")} ${t("approvals.inboxEmptyHint")}`}
               onApprove={setApproveTarget}
               onDeny={setDenyTarget}
             />
@@ -175,10 +192,12 @@ export function ApprovalsPage(props: ApprovalsPageProps): ReactNode {
             <div className="loading-panel">
               <Loader2 className="spin" size={16} /> {t("common.loadingRuntimeData")}
             </div>
-          ) : history.length === 0 ? (
-            <EmptyState title={t("approvals.historyEmpty")} description={t("approvals.historyEmptyHint")} />
           ) : (
-            <ApprovalTable records={history} highlightId={deepLinkId} />
+            <ApprovalTable
+              records={history}
+              highlightId={deepLinkId}
+              empty={`${t("approvals.historyEmpty")} ${t("approvals.historyEmptyHint")}`}
+            />
           )}
         </TabsContent>
         <TabsContent value="grants">
@@ -186,10 +205,13 @@ export function ApprovalsPage(props: ApprovalsPageProps): ReactNode {
             <div className="loading-panel">
               <Loader2 className="spin" size={16} /> {t("common.loadingRuntimeData")}
             </div>
-          ) : grants.length === 0 ? (
-            <EmptyState title={t("approvals.grantsEmpty")} description={t("approvals.grantsEmptyHint")} />
           ) : (
-            <GrantsTable grants={grants} onRevoked={refreshAll} onError={(message) => setError(message)} />
+            <GrantsTable
+              grants={grants}
+              empty={`${t("approvals.grantsEmpty")} ${t("approvals.grantsEmptyHint")}`}
+              onRevoked={refreshAll}
+              onError={(message) => setError(message)}
+            />
           )}
         </TabsContent>
       </Tabs>
@@ -229,6 +251,7 @@ function statusTone(record: ApprovalRecord): "success" | "warning" | "error" | u
 
 interface ApprovalTableProps {
   records: ApprovalRecord[];
+  empty: string;
   highlightId?: string;
   pendingOnly?: boolean;
   onApprove?: (record: ApprovalRecord) => void;
@@ -238,71 +261,73 @@ interface ApprovalTableProps {
 function ApprovalTable(props: ApprovalTableProps): ReactNode {
   const t = useTranslate();
   return (
-    <div className="table-wrap">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("approvals.columns.action")}</TableHead>
-            <TableHead>{t("approvals.columns.operation")}</TableHead>
-            <TableHead>{t("approvals.columns.connection")}</TableHead>
-            <TableHead>{t("approvals.columns.caller")}</TableHead>
-            <TableHead>{t("approvals.columns.preview")}</TableHead>
-            <TableHead>{t("approvals.columns.created")}</TableHead>
-            <TableHead>{t("approvals.columns.expires")}</TableHead>
-            {props.pendingOnly ? (
-              <TableHead>{t("approvals.columns.decision")}</TableHead>
-            ) : (
-              <TableHead>{t("approvals.columns.status")}</TableHead>
-            )}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {props.records.map((record) => (
-            <TableRow key={record.id} data-highlight={record.id === props.highlightId || undefined}>
-              <TableCell>
-                <div className="approval-action">
-                  <code>{record.actionId}</code>
-                  {record.kind === "proxy" ? <Badge>{t("approvals.proxyKind")}</Badge> : null}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge tone={record.operationType === "destructive" ? "error" : undefined}>
-                  {record.operationType}
-                </Badge>
-              </TableCell>
-              <TableCell>{record.connectionName ?? record.service}</TableCell>
-              <TableCell>{record.caller}</TableCell>
-              <TableCell>
-                <code className="approval-preview">{compactJson(record.preview)}</code>
-              </TableCell>
-              <TableCell>{formatDate(record.createdAt)}</TableCell>
-              <TableCell>{formatDate(record.expiresAt)}</TableCell>
-              <TableCell>
-                {props.pendingOnly ? (
-                  <div className="button-row">
-                    <Button size="sm" onClick={() => props.onApprove?.(record)}>
-                      <Check size={14} />
-                      {t("approvals.approve")}
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => props.onDeny?.(record)}>
-                      <X size={14} />
-                      {t("approvals.deny")}
-                    </Button>
-                  </div>
-                ) : (
-                  <Badge tone={statusTone(record)}>{t(`approvals.status.${record.status}`)}</Badge>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <RowList
+      header={
+        <RowHeader>
+          <span className="min-w-0 flex-1 truncate">{t("approvals.columns.action")}</span>
+          <span className={APPROVAL_CELLS.caller}>{t("approvals.columns.caller")}</span>
+          <span className={APPROVAL_CELLS.preview}>{t("approvals.columns.preview")}</span>
+          <span className={APPROVAL_CELLS.operation}>{t("approvals.columns.operation")}</span>
+          <span className={APPROVAL_CELLS.expires}>{t("approvals.columns.expires")}</span>
+          <span className={APPROVAL_CELLS.action}>
+            {t(props.pendingOnly ? "approvals.columns.decision" : "approvals.columns.status")}
+          </span>
+        </RowHeader>
+      }
+    >
+      {props.records.length === 0 ? (
+        <EmptyRows>{props.empty}</EmptyRows>
+      ) : (
+        props.records.map((record) => (
+          <Row
+            key={record.id}
+            highlighted={record.id === props.highlightId}
+            title={
+              <span className="approval-action">
+                <code>{record.actionId}</code>
+                {record.kind === "proxy" ? <Badge>{t("approvals.proxyKind")}</Badge> : null}
+              </span>
+            }
+            cells={
+              <>
+                <span className={APPROVAL_CELLS.caller}>{record.caller}</span>
+                <span className={APPROVAL_CELLS.preview}>
+                  <code className="approval-preview">{compactJson(record.preview)}</code>
+                </span>
+                <span className={APPROVAL_CELLS.operation}>
+                  <Badge tone={record.operationType === "destructive" ? "error" : undefined}>
+                    {record.operationType}
+                  </Badge>
+                </span>
+                <span className={APPROVAL_CELLS.expires}>{formatDate(record.expiresAt)}</span>
+                <span className={APPROVAL_CELLS.action}>
+                  {props.pendingOnly ? (
+                    <div className="button-row">
+                      <Button size="sm" onClick={() => props.onApprove?.(record)}>
+                        <Check size={14} />
+                        {t("approvals.approve")}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => props.onDeny?.(record)}>
+                        <X size={14} />
+                        {t("approvals.deny")}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Badge tone={statusTone(record)}>{t(`approvals.status.${record.status}`)}</Badge>
+                  )}
+                </span>
+              </>
+            }
+          />
+        ))
+      )}
+    </RowList>
   );
 }
 
 interface GrantsTableProps {
   grants: ApprovalGrant[];
+  empty: string;
   onRevoked(): void;
   onError(message: string): void;
 }
@@ -324,48 +349,54 @@ function GrantsTable(props: GrantsTableProps): ReactNode {
   }
 
   return (
-    <div className="table-wrap">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("approvals.columns.action")}</TableHead>
-            <TableHead>{t("approvals.columns.operation")}</TableHead>
-            <TableHead>{t("approvals.columns.connection")}</TableHead>
-            <TableHead>{t("approvals.grants.uses")}</TableHead>
-            <TableHead>{t("approvals.columns.expires")}</TableHead>
-            <TableHead />
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {props.grants.map((grant) => (
-            <TableRow key={grant.id}>
-              <TableCell>
-                <code>{grant.actionId}</code>
-              </TableCell>
-              <TableCell>
-                <Badge tone={grant.operationType === "destructive" ? "error" : undefined}>{grant.operationType}</Badge>
-              </TableCell>
-              <TableCell>{grant.connectionId ?? "—"}</TableCell>
-              <TableCell>
-                {grant.uses}/{grant.maxUses === 0 ? "∞" : grant.maxUses}
-              </TableCell>
-              <TableCell>{formatDate(grant.expiresAt)}</TableCell>
-              <TableCell>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={revoking === grant.id}
-                  onClick={() => void revoke(grant.id)}
-                >
-                  {revoking === grant.id ? <Loader2 className="spin" size={14} /> : <X size={14} />}
-                  {t("approvals.grants.revoke")}
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <RowList
+      header={
+        <RowHeader>
+          <span className="min-w-0 flex-1 truncate">{t("approvals.columns.action")}</span>
+          <span className={GRANT_CELLS.connection}>{t("approvals.columns.connection")}</span>
+          <span className={GRANT_CELLS.uses}>{t("approvals.grants.uses")}</span>
+          <span className={GRANT_CELLS.operation}>{t("approvals.columns.operation")}</span>
+          <span className={GRANT_CELLS.expires}>{t("approvals.columns.expires")}</span>
+          <span className={GRANT_CELLS.action} />
+        </RowHeader>
+      }
+    >
+      {props.grants.length === 0 ? (
+        <EmptyRows>{props.empty}</EmptyRows>
+      ) : (
+        props.grants.map((grant) => (
+          <Row
+            key={grant.id}
+            title={<code>{grant.actionId}</code>}
+            cells={
+              <>
+                <span className={GRANT_CELLS.connection}>{grant.connectionId ?? "—"}</span>
+                <span className={GRANT_CELLS.uses}>
+                  {grant.uses}/{grant.maxUses === 0 ? "∞" : grant.maxUses}
+                </span>
+                <span className={GRANT_CELLS.operation}>
+                  <Badge tone={grant.operationType === "destructive" ? "error" : undefined}>
+                    {grant.operationType}
+                  </Badge>
+                </span>
+                <span className={GRANT_CELLS.expires}>{formatDate(grant.expiresAt)}</span>
+                <span className={GRANT_CELLS.action}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={revoking === grant.id}
+                    onClick={() => void revoke(grant.id)}
+                  >
+                    {revoking === grant.id ? <Loader2 className="spin" size={14} /> : <X size={14} />}
+                    {t("approvals.grants.revoke")}
+                  </Button>
+                </span>
+              </>
+            }
+          />
+        ))
+      )}
+    </RowList>
   );
 }
 

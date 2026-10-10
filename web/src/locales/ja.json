@@ -90,10 +90,23 @@
         "title": "PACT"
       }
     },
+    "navGroup": {
+      "operate": "操作",
+      "custody": "保管"
+    },
+    "detail": {
+      "connected": "{{count}} 件接続中",
+      "actions": "{{count}} 件のアクション",
+      "recent": "{{count}} 件の最近",
+      "pending": "{{count}} 件保留中",
+      "tokens": "{{count}} 件のトークン",
+      "configured": "{{count}} 件構成済み"
+    },
     "settings": "設定",
     "settingsDescription": "言語、外観、接続、ランタイムを管理します。",
     "oomolKeyDescription": "対応サービスと割引を確認し、キーの接続や管理を選択できます。",
-    "notifications": "通知"
+    "notifications": "通知",
+    "menu": "メニュー"
   },
   "unlock": {
     "token": "管理者 token",

@@ -205,7 +205,7 @@ describe("RunsPage service loading", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
-    const tree = renderRunsPage(null);
+    const tree = renderRunsPage(null, undefined, ["initial-1"]);
     const copy = findElement(tree, (element) => element.props["aria-label"] === "runs.copyExecutionId");
     (copy.props.onClick as (() => void) | undefined)?.();
 
@@ -214,12 +214,12 @@ describe("RunsPage service loading", () => {
   });
 });
 
-function renderRunsPage(service: string | null, nextCursor?: string): ReactNode {
+function renderRunsPage(service: string | null, nextCursor?: string, expanded?: string[]): ReactNode {
   routerState.searchParams = service ? new URLSearchParams({ service }) : new URLSearchParams();
   hookState.effects = [];
   hookState.refIndex = 0;
   hookState.stateIndex = 0;
-  return RunsPage({ initialRuns: [run("initial-1", "hackernews")], nextCursor });
+  return RunsPage({ initialRuns: [run("initial-1", "hackernews")], nextCursor, initialExpanded: expanded });
 }
 
 function runLatestEffect(): void {
