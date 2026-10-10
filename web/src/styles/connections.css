@@ -64,3 +64,25 @@
   color: inherit;
   text-decoration: underline;
 }
+
+.connect-confirm {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.connection-added-link {
+  margin-left: 0.5rem;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.copy-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.copy-field > input {
+  flex: 1;
+}

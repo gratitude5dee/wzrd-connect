@@ -580,3 +580,12 @@
 .console-settings-panel .runtime-status {
   display: flex;
 }
+
+.sidebar-footer-runtime {
+  cursor: default;
+  color: var(--muted-foreground);
+}
+
+.sidebar-footer-runtime:hover {
+  background: none;
+}

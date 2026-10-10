@@ -35,7 +35,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, matchPath, Navigate, NavLink, Route, Routes, useLocation, useParams } from "react-router";
+import { Link, matchPath, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { ActionsPage } from "./actions-page";
 import { ActivityPage } from "./activity-page";
 import { AgentPage } from "./agent-page";
@@ -98,6 +98,16 @@ const navGroups: readonly NavGroup[] = [
     ],
   },
 ] as const;
+
+// "g <letter>" quick-nav between sections (see the keydown handler in AppShell).
+const quickNavPaths: Record<string, string> = {
+  o: "/overview",
+  p: "/providers",
+  c: "/connections",
+  a: "/agents",
+  t: "/activity",
+  r: "/approvals",
+};
 
 const oauthCompletionChannelName = "oomol-connect-oauth";
 const oauthCompletedType = "oauth.completed";
@@ -415,6 +425,8 @@ function AppShell(props: {
 }): ReactNode {
   const t = useTranslate();
   const location = useLocation();
+  const navigate = useNavigate();
+  const goPrefixAt = useRef(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The rail is the default; the cookie remembers an explicit expansion.
   const [sidebarExpanded, setSidebarExpanded] = useState(() => readSidebarExpanded());
@@ -444,21 +456,43 @@ function AppShell(props: {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "b") {
+      const editing =
+        event.target instanceof HTMLElement &&
+        event.target.closest("input, textarea, select, [contenteditable]") != null;
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+        if (editing) {
+          return;
+        }
+        event.preventDefault();
+        setSidebarExpanded((expanded) => {
+          writeSidebarExpanded(!expanded);
+          return !expanded;
+        });
         return;
       }
-      if (event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable]")) {
+      // PAP-style "g <letter>" quick-nav between sections.
+      if (editing || event.metaKey || event.ctrlKey || event.altKey) {
+        goPrefixAt.current = 0;
         return;
       }
-      event.preventDefault();
-      setSidebarExpanded((expanded) => {
-        writeSidebarExpanded(!expanded);
-        return !expanded;
-      });
+      if (event.key === "g") {
+        goPrefixAt.current = Date.now();
+        return;
+      }
+      if (goPrefixAt.current === 0 || Date.now() - goPrefixAt.current > 1_000) {
+        goPrefixAt.current = 0;
+        return;
+      }
+      goPrefixAt.current = 0;
+      const path = quickNavPaths[event.key];
+      if (path) {
+        event.preventDefault();
+        navigate(path);
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [navigate]);
 
   function toggleSidebar(): void {
     setSidebarExpanded((expanded) => {
@@ -516,6 +550,7 @@ function AppShell(props: {
           </div>
 
           <div className="sidebar-footer">
+            <ShellFooterRuntime ok={!props.error} rail={rail} />
             <ThemeMenuButton theme={props.theme} onThemeChange={props.onThemeChange} rail={rail} />
             {props.showLogout ? (
               <ShellFooterButton icon={LogOut} label={t("shell.logout")} rail={rail} onClick={props.onLogout} />
@@ -775,6 +810,30 @@ function ShellNavItem(props: {
     <Tooltip>
       <TooltipTrigger asChild>{link}</TooltipTrigger>
       <TooltipContent side="right">{props.label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+// Which runtime this console talks to: the current host with a liveness dot,
+// the equivalent of PAP's account line in the footer.
+function ShellFooterRuntime(props: { ok: boolean; rail: boolean }): ReactNode {
+  const host = typeof window === "undefined" ? "" : window.location.host;
+  if (!host) {
+    return null;
+  }
+  const item = (
+    <span className="nav-item sidebar-footer-item sidebar-footer-runtime">
+      <StatusDot ok={props.ok} />
+      <span className="nav-item-label">{host}</span>
+    </span>
+  );
+  if (!props.rail) {
+    return item;
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{item}</TooltipTrigger>
+      <TooltipContent side="right">{host}</TooltipContent>
     </Tooltip>
   );
 }

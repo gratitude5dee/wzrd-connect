@@ -14,9 +14,10 @@ import type {
 import type { ReactNode, SubmitEvent } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
-import { Copy, ExternalLink, KeyRound, Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, EyeOff, KeyRound, Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "./api";
+import { CopyButton } from "./components/copy-field";
 import { formatDate } from "./model";
 import { Badge, EmptyState, InlineError } from "./shared-ui";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,6 @@ export function PactPage(_props: PactPageProps): ReactNode {
   const [editTarget, setEditTarget] = useState<PactRegistration | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [tokenOpen, setTokenOpen] = useState(false);
-  const [copiedKid, setCopiedKid] = useState(false);
 
   async function load(): Promise<void> {
     try {
@@ -83,13 +83,6 @@ export function PactPage(_props: PactPageProps): ReactNode {
     } finally {
       setBusyAction(null);
     }
-  }
-
-  function copyKid(kid: string): void {
-    void navigator.clipboard?.writeText(kid).then(() => {
-      setCopiedKid(true);
-      setTimeout(() => setCopiedKid(false), 1500);
-    });
   }
 
   return (
@@ -140,28 +133,22 @@ export function PactPage(_props: PactPageProps): ReactNode {
           <dl className="approval-detail-fields">
             <dt>{t("pact.identity.kid")}</dt>
             <dd>
-              <code>{identity.kid}</code>{" "}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => copyKid(identity.kid)}
-                title={t("pact.identity.copyKid")}
-              >
-                <Copy size={12} />
-                {copiedKid ? t("pact.identity.copied") : null}
-              </Button>
+              <code>{identity.kid}</code> <CopyButton value={identity.kid} label={t("pact.identity.copyKid")} />
             </dd>
             <dt>{t("pact.identity.issuer")}</dt>
             <dd>
-              <code>{identity.issuer ?? "—"}</code>
+              <code>{identity.issuer ?? "—"}</code>{" "}
+              {identity.issuer ? <CopyButton value={identity.issuer} label={t("pact.identity.copyValue")} /> : null}
             </dd>
             <dt>{t("pact.identity.jwksUrl")}</dt>
             <dd>
-              <code>{identity.jwksUrl ?? "—"}</code>
+              <code>{identity.jwksUrl ?? "—"}</code>{" "}
+              {identity.jwksUrl ? <CopyButton value={identity.jwksUrl} label={t("pact.identity.copyValue")} /> : null}
             </dd>
             <dt>{t("pact.identity.subject")}</dt>
             <dd>
-              <code>{identity.subject}</code>
+              <code>{identity.subject}</code>{" "}
+              <CopyButton value={identity.subject} label={t("pact.identity.copyValue")} />
             </dd>
             <dt>{t("pact.identity.createdAt")}</dt>
             <dd>{formatDate(identity.createdAt)}</dd>
@@ -534,6 +521,10 @@ function RegistrationTokenDialog(props: { onClose(): void }): ReactNode {
             <div className="button-row">
               <Button variant="outline" type="button" onClick={props.onClose}>
                 {t("common.close")}
+              </Button>
+              <Button variant="outline" type="button" onClick={() => setToken(null)}>
+                <EyeOff size={15} />
+                {t("common.hide")}
               </Button>
               <Button type="button" onClick={copyToken}>
                 <Copy size={15} />

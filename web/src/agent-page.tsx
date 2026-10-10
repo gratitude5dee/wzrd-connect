@@ -11,7 +11,7 @@ import type { ReactNode, SubmitEvent } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
 import { useClipboard } from "foxact/use-clipboard";
-import { Bot, Check, Copy, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, Check, Copy, EyeOff, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import {
@@ -24,6 +24,7 @@ import { buildAgentAccess, tokenPolicyRules } from "./agent-access";
 import { AgentAccessEditor } from "./agent-access-editor";
 import { apiDelete, apiPost, apiPut } from "./api";
 import { buildMcpClientConfig } from "./client-onboarding";
+import { CopyButton } from "./components/copy-field";
 import { EmptyRows, Row, RowList } from "./components/row-list";
 import { formatDate } from "./model";
 import { createPolicyEditorDraft, policyRulesFromEditorDraft } from "./policy";
@@ -169,9 +170,16 @@ export function AgentPage(props: AgentPageProps): ReactNode {
   return (
     <section className="detail-panel access-panel">
       <div className="access-section-heading">
-        <div>
-          <h2>{token.name}</h2>
-          <p>{t("agents.detail.description")}</p>
+        <div className="provider-detail-title-row">
+          <Button asChild variant="outline" size="icon-sm">
+            <Link to="/agents" aria-label={t("agents.back")} title={t("agents.back")}>
+              <ArrowLeft size={15} />
+            </Link>
+          </Button>
+          <div>
+            <h2>{token.name}</h2>
+            <p>{t("agents.detail.description")}</p>
+          </div>
         </div>
         <Button variant="outline" size="sm" type="button" onClick={openEdit}>
           <Pencil size={15} />
@@ -196,6 +204,15 @@ export function AgentPage(props: AgentPageProps): ReactNode {
                 {copied ? <Check size={15} /> : <Copy size={15} />}
                 {copied ? t("access.copiedToken") : t("access.copyToken")}
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => navigate(`/agents/${token.id}`, { replace: true })}
+              >
+                <EyeOff size={15} />
+                {t("common.hide")}
+              </Button>
             </div>
           ) : (
             <div className="agent-secret">
@@ -219,7 +236,10 @@ export function AgentPage(props: AgentPageProps): ReactNode {
           </div>
         </div>
         <div className="agent-credential">
-          <span className="agent-credential-label">{t("agents.signin.config")}</span>
+          <span className="agent-credential-label">
+            {t("agents.signin.config")}
+            <CopyButton value={mcpConfig} label={t("resources.mcp.copyConfig")} />
+          </span>
           <pre className="agent-config">{mcpConfig}</pre>
         </div>
         <div className="agent-meta">

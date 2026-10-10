@@ -18,7 +18,10 @@
     "success": "成功",
     "cancel": "キャンセル",
     "undo": "元に戻す",
-    "save": "保存"
+    "save": "保存",
+    "hide": "非表示",
+    "copy": "コピー",
+    "copied": "コピーしました"
   },
   "brand": {
     "subtitle": "ローカルランタイムコンソール",
@@ -480,7 +483,9 @@
     "dialog": {
       "configureTitle": "{{name}} OAuth App を設定",
       "editTitle": "{{name}} OAuth App を編集"
-    }
+    },
+    "copyConfigId": "設定 ID をコピー",
+    "copyClientId": "クライアント ID をコピー"
   },
   "actions": {
     "connection": "接続",
@@ -1036,7 +1041,8 @@
       "copyToken": "トークンをコピー",
       "mint": "トークンを発行",
       "tokenFailed": "登録トークンを発行できませんでした。",
-      "subject": "サブジェクト"
+      "subject": "サブジェクト",
+      "copyValue": "値をコピー"
     },
     "registrations": {
       "heading": "Brand 登録先",
@@ -1123,6 +1129,7 @@
       "title": "エージェントが見つかりません",
       "description": "このエージェントは存在しません。"
     },
+    "back": "エージェントに戻る",
     "list": {
       "name": "名前",
       "id": "ID",
@@ -1188,6 +1195,17 @@
     "description": "エージェントが利用できる設定済みの接続。",
     "connect": "接続",
     "browseProviders": "プロバイダーを参照",
+    "added": {
+      "success": "接続を追加しました",
+      "setAccess": "エージェントのアクセスを設定"
+    },
+    "confirm": {
+      "title": "デフォルトの権限を設定",
+      "description": "エージェントはデフォルトで {{name}} の選択されたアクションを使用できます。この接続で提供しないものはチェックを外してください。",
+      "finish": "完了",
+      "connectAnother": "もう 1 つ接続"
+    },
+    "connectAnother": "別のサービスを接続",
     "back": "接続一覧に戻る",
     "saveFailed": "アクセス変更の保存に失敗しました。",
     "columns": {

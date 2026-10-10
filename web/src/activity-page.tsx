@@ -9,17 +9,18 @@ import type {
 import type { ReactNode, SubmitEvent } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
-import { ChevronDown, ChevronUp, Copy, Loader2, Search, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Loader2, Search, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { apiGet } from "./api";
+import { CopyButton } from "./components/copy-field";
 import { EmptyRows, Row, RowHeader, RowList } from "./components/row-list";
 import { formatDateTime } from "./model";
 import { Badge, InlineError } from "./shared-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export type ActivityStatus = "ok" | "pending" | "denied" | "failed";
 export type ActivityKind = "run" | "approval";
@@ -503,19 +504,7 @@ function RunDetail(props: { run: RunLog }): ReactNode {
       <div className="row-detail-meta">
         <span className="mono row-detail-id">
           {run.id}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t("runs.copyExecutionId")}
-                onClick={() => void navigator.clipboard.writeText(run.id)}
-              >
-                <Copy size={13} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t("runs.copyExecutionId")}</TooltipContent>
-          </Tooltip>
+          <CopyButton value={run.id} label={t("runs.copyExecutionId")} />
         </span>
         <span>
           {t("runs.table.context")}: <span className="mono">{run.caller}</span>

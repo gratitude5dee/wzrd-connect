@@ -18,7 +18,10 @@
     "success": "Succès",
     "cancel": "Annuler",
     "undo": "Annuler",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "hide": "Masquer",
+    "copy": "Copier",
+    "copied": "Copié"
   },
   "brand": {
     "subtitle": "Console du runtime local",
@@ -480,7 +483,9 @@
     "dialog": {
       "configureTitle": "Configurer l’app OAuth {{name}}",
       "editTitle": "Modifier l’app OAuth {{name}}"
-    }
+    },
+    "copyConfigId": "Copier l'ID de configuration",
+    "copyClientId": "Copier l'ID client"
   },
   "actions": {
     "connection": "Connexion",
@@ -1036,7 +1041,8 @@
       "copyToken": "Copier le jeton",
       "mint": "Émettre le jeton",
       "tokenFailed": "Impossible d'émettre le jeton d'enregistrement.",
-      "subject": "Sujet"
+      "subject": "Sujet",
+      "copyValue": "Copier la valeur"
     },
     "registrations": {
       "heading": "Enregistrements de marques",
@@ -1123,6 +1129,7 @@
       "title": "Agent introuvable",
       "description": "Cet agent n'existe plus."
     },
+    "back": "Retour aux agents",
     "list": {
       "name": "Nom",
       "id": "ID",
@@ -1188,6 +1195,17 @@
     "description": "Connexions configurées que vos agents peuvent utiliser.",
     "connect": "Connecter",
     "browseProviders": "Parcourir les fournisseurs",
+    "added": {
+      "success": "Connexion ajoutée",
+      "setAccess": "Définir l'accès des agents"
+    },
+    "confirm": {
+      "title": "Autorisations par défaut",
+      "description": "Par défaut, chaque agent peut utiliser les actions cochées sur {{name}}. Décochez celles que cette connexion ne doit pas offrir.",
+      "finish": "Terminer",
+      "connectAnother": "Connecter un autre"
+    },
+    "connectAnother": "Connecter un autre service",
     "back": "Retour aux connexions",
     "saveFailed": "Échec de l'enregistrement des accès.",
     "columns": {

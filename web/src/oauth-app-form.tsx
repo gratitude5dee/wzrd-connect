@@ -5,6 +5,7 @@ import { useTranslate } from "@embra/i18n/react";
 import { ExternalLink, Settings, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiDelete, apiPut } from "./api";
+import { CopyField } from "./components/copy-field";
 import { CredentialInput } from "./credential-input";
 import { OAuthSourceForm } from "./saas-project-settings";
 import { FormStatus } from "./shared-ui";
@@ -111,10 +112,7 @@ export function OAuthAppForm(props: OAuthAppFormProps): ReactNode {
         <OAuthClientSetupSteps setup={props.auth.clientSetup} providerName={props.provider.displayName} />
       ) : null}
       {props.config?.expectedRedirectUri ? (
-        <Label className="field">
-          <span>{t("providers.oauthClientSettings.callbackUrl")}</span>
-          <Input className="font-mono text-xs" value={props.config.expectedRedirectUri} readOnly />
-        </Label>
+        <CopyField label={t("providers.oauthClientSettings.callbackUrl")} value={props.config.expectedRedirectUri} />
       ) : null}
       <Label className="field">
         <span>{t("providers.oauthClientSettings.clientId")}</span>

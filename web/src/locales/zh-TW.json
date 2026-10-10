@@ -18,7 +18,10 @@
     "success": "成功",
     "cancel": "取消",
     "undo": "復原",
-    "save": "儲存"
+    "save": "儲存",
+    "hide": "隱藏",
+    "copy": "複製",
+    "copied": "已複製"
   },
   "brand": {
     "subtitle": "本機執行階段控制台",
@@ -480,7 +483,9 @@
     "dialog": {
       "configureTitle": "設定 {{name}} OAuth App",
       "editTitle": "編輯 {{name}} OAuth App"
-    }
+    },
+    "copyConfigId": "複製設定 ID",
+    "copyClientId": "複製用戶端 ID"
   },
   "actions": {
     "connection": "連線",
@@ -1036,7 +1041,8 @@
       "copyToken": "複製權杖",
       "mint": "簽發權杖",
       "tokenFailed": "無法簽發註冊權杖。",
-      "subject": "主體"
+      "subject": "主體",
+      "copyValue": "複製值"
     },
     "registrations": {
       "heading": "Brand 註冊",
@@ -1123,6 +1129,7 @@
       "title": "找不到代理",
       "description": "此代理已不存在。"
     },
+    "back": "返回代理",
     "list": {
       "name": "名稱",
       "id": "ID",
@@ -1188,6 +1195,17 @@
     "description": "代理可使用的已設定連線。",
     "connect": "連線",
     "browseProviders": "瀏覽提供程式",
+    "added": {
+      "success": "已成功新增連線",
+      "setAccess": "設定代理存取權限"
+    },
+    "confirm": {
+      "title": "設定預設權限",
+      "description": "預設情況下，每個代理都可以在 {{name}} 上執行已選取的操作。取消勾選此連線不應提供的操作。",
+      "finish": "完成",
+      "connectAnother": "再連接一個"
+    },
+    "connectAnother": "連接另一個服務",
     "back": "返回連線",
     "saveFailed": "儲存存取變更失敗。",
     "columns": {
