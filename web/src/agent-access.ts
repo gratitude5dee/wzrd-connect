@@ -188,6 +188,98 @@ export function runtimeRulesBlockingAction(
 }
 
 /**
+ * Returns the runtime layer updated so the action is allowed by default again:
+ * its coverage is stripped from the block list and it is re-covered when the
+ * runtime layer runs an allow list.
+ */
+export function runtimeRulesAllowingAction(
+  runtime: PolicyRules,
+  actionId: string,
+  providers: ProviderDefinition[],
+): PolicyRules {
+  const covered = runtime.allowedActions.some((rule) => matchesActionRule(rule, actionId));
+  return {
+    ...runtime,
+    allowedActions:
+      runtime.allowedActions.length > 0 && !covered
+        ? compactActionRules([...runtime.allowedActions, actionId], providers)
+        : runtime.allowedActions,
+    blockedActions: removeActionCoverage(runtime.blockedActions, actionId, providers),
+  };
+}
+
+/** Tokens whose connection grant lets them reach this connection. */
+export function tokensCoveringConnection(
+  connection: ConnectionRecord,
+  tokens: RuntimeTokenSummary[],
+): RuntimeTokenSummary[] {
+  return tokens.filter(
+    (token) =>
+      connection.id != null &&
+      (token.allowedConnections.length === 0 || token.allowedConnections.includes(connection.id)),
+  );
+}
+
+export interface ConnectionAccessRow {
+  action: ActionDefinition;
+  /** Allowed by the deployment + runtime default layers alone. */
+  defaultAllowed: boolean;
+  /** The deployment layer denies the action — the runtime toggle cannot re-allow it. */
+  deploymentBlocked: boolean;
+  /** Covered by an approval-required rule in a default layer. */
+  highRisk: boolean;
+  /** Agents whose effective access differs from the default. */
+  changedAgents: number;
+}
+
+/**
+ * Per-action default state for one connection's service, plus how many agents
+ * diverge from it — the rows the connection detail's Permissions section renders.
+ */
+export function buildConnectionAccess(options: {
+  connection: ConnectionRecord;
+  provider: ProviderDefinition;
+  policy: RuntimePolicyState;
+  tokens: RuntimeTokenSummary[];
+}): ConnectionAccessRow[] {
+  const defaultLayers = policyLayers(options.policy);
+  const deploymentLayers = defaultLayers.filter((layer) => layer.source === "deployment");
+  const approvalRules = defaultLayers.flatMap((layer) => layer.rules.approvalRequiredActions ?? []);
+  const tokenEntries = options.tokens.map((token) => ({
+    layers: policyLayers(options.policy, token),
+    connectionAllowed:
+      options.connection.id != null &&
+      (token.allowedConnections.length === 0 || token.allowedConnections.includes(options.connection.id)),
+  }));
+  return options.provider.actions.map((action) => {
+    const defaultAllowed = evaluatePolicy(action.id, "action", defaultLayers).allowed;
+    const changedAgents = tokenEntries.filter(
+      (entry) =>
+        defaultAllowed && !(entry.connectionAllowed && evaluatePolicy(action.id, "action", entry.layers).allowed),
+    ).length;
+    return {
+      action,
+      defaultAllowed,
+      deploymentBlocked: !evaluatePolicy(action.id, "action", deploymentLayers).allowed,
+      highRisk: approvalRules.some((rule) => matchesActionRule(rule, action.id)),
+      changedAgents,
+    };
+  });
+}
+
+/** Names of the provider's actions the token can still run through its policy layers. */
+export function agentConnectionActionNames(
+  token: RuntimeTokenSummary,
+  provider: ProviderDefinition,
+  policy: RuntimePolicyState,
+): string[] {
+  const layers = policyLayers(policy, token);
+  return provider.actions
+    .filter((action) => evaluatePolicy(action.id, "action", layers).allowed)
+    .map((action) => action.name);
+}
+
+/**
  * Removes whatever covers `actionId` from a rule list: exact entries drop out,
  * globs expand to the catalog ids they cover minus the freed one.
  */

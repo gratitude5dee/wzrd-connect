@@ -44,7 +44,8 @@
     "docs": "Connecter des clients",
     "approvals": "Approbations",
     "pact": "PACT",
-    "agents": "Agents"
+    "agents": "Agents",
+    "connections": "Connexions"
   },
   "shell": {
     "invalidUnlockToken": "Saisissez un token administrateur valide pour déverrouiller la console.",
@@ -95,6 +96,9 @@
       },
       "agents": {
         "title": "Agents"
+      },
+      "connections": {
+        "title": "Connexions"
       }
     },
     "navGroup": {
@@ -1177,6 +1181,56 @@
     "defaults": {
       "title": "Politiques par défaut",
       "description": "Règles de déploiement et d'exécution appliquées à tous les agents."
+    }
+  },
+  "connections": {
+    "title": "Connexions",
+    "description": "Connexions configurées que vos agents peuvent utiliser.",
+    "connect": "Connecter",
+    "browseProviders": "Parcourir les fournisseurs",
+    "back": "Retour aux connexions",
+    "saveFailed": "Échec de l'enregistrement des accès.",
+    "columns": {
+      "service": "Service",
+      "account": "Compte",
+      "agents": "Agents"
+    },
+    "empty": {
+      "title": "Rien n'est connecté",
+      "description": "Connectez un fournisseur pour donner des identifiants à vos agents."
+    },
+    "missing": {
+      "title": "Connexion introuvable",
+      "description": "Cette connexion n'existe plus."
+    },
+    "permissions": {
+      "title": "Autorisations",
+      "description": "Actions par défaut pour cette connexion. Les changements s'appliquent à tous les agents, sauf si un agent les remplace.",
+      "empty": "Ce service n'a aucune action."
+    },
+    "agents": {
+      "title": "Agents ayant accès",
+      "empty": "Aucun agent ne peut utiliser cette connexion.",
+      "noActions": "Aucune action"
+    },
+    "activity": {
+      "title": "Activité récente",
+      "viewAll": "Voir toute l'activité",
+      "empty": "Aucune requête pour cette connexion."
+    },
+    "credentials": {
+      "title": "Identifiants",
+      "description": "Gérer les identifiants de cette connexion."
+    },
+    "pact": {
+      "title": "PACT",
+      "brand": "Marque",
+      "card": "Carte",
+      "interface": "Interface",
+      "providerOrigin": "Origine du fournisseur",
+      "registration": "Enregistrement",
+      "needsReauthorization": "Réautorisation requise",
+      "identityOnly": "Identité seulement"
     }
   }
 }

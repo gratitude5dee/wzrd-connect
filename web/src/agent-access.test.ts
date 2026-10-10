@@ -2,12 +2,16 @@ import type { ConnectionRecord, ProviderDefinition, RuntimePolicyState, RuntimeT
 
 import { describe, expect, it } from "vitest";
 import {
+  agentConnectionActionNames,
   buildAgentAccess,
+  buildConnectionAccess,
   compactActionRules,
   resetAgentAction,
+  runtimeRulesAllowingAction,
   runtimeRulesBlockingAction,
   setAgentActionAllowed,
   tokenPolicyRules,
+  tokensCoveringConnection,
 } from "./agent-access";
 
 const githubId = "11111111-1111-4111-8111-111111111111";
@@ -223,5 +227,64 @@ describe("compactActionRules", () => {
     expect(
       compactActionRules(["github.create_issue", "github.delete_repository", "slack.send_message"], providers),
     ).toEqual(["github.*", "slack.*"]);
+  });
+});
+
+describe("runtimeRulesAllowingAction", () => {
+  it("removes the action from the runtime block list", () => {
+    const next = runtimeRulesAllowingAction(
+      { ...policy.runtime, blockedActions: ["github.create_issue"] },
+      "github.create_issue",
+      providers,
+    );
+    expect(next.blockedActions).toEqual([]);
+  });
+
+  it("expands a covering glob and re-covers an allow-listed runtime layer", () => {
+    const next = runtimeRulesAllowingAction(
+      { ...policy.runtime, allowedActions: ["slack.*"], blockedActions: ["github.*"] },
+      "github.create_issue",
+      providers,
+    );
+    expect(next.blockedActions).toEqual(["github.delete_repository"]);
+    expect(next.allowedActions).toEqual(["slack.*", "github.create_issue"]);
+  });
+});
+
+describe("tokensCoveringConnection", () => {
+  it("matches unrestricted tokens and explicit grants only", () => {
+    const github = connections[0];
+    const covering = tokensCoveringConnection(github, [
+      token({ id: "all" }),
+      token({ id: "scoped", allowedConnections: [githubId] }),
+      token({ id: "other", allowedConnections: [slackId] }),
+    ]);
+    expect(covering.map((entry) => entry.id)).toEqual(["all", "scoped"]);
+  });
+});
+
+describe("buildConnectionAccess", () => {
+  it("marks deployment-blocked rows and counts diverging agents", () => {
+    const rows = buildConnectionAccess({
+      connection: connections[0],
+      provider: providers[0],
+      policy,
+      tokens: [
+        token({ id: "all" }),
+        token({ id: "blocked", blockedActions: ["github.create_issue"] }),
+        token({ id: "scoped", allowedConnections: [slackId] }),
+      ],
+    });
+    const create = rows.find((row) => row.action.id === "github.create_issue");
+    const remove = rows.find((row) => row.action.id === "github.delete_repository");
+    expect(create).toMatchObject({ defaultAllowed: true, deploymentBlocked: false, changedAgents: 2 });
+    expect(remove).toMatchObject({ defaultAllowed: false, deploymentBlocked: true, changedAgents: 0 });
+  });
+});
+
+describe("agentConnectionActionNames", () => {
+  it("lists only the actions surviving the token layers", () => {
+    const names = agentConnectionActionNames(token({ allowedActions: ["github.create_issue"] }), providers[0], policy);
+    expect(names).toEqual(["create_issue"]);
   });
 });

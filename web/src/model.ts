@@ -590,7 +590,7 @@ function pickUsableCredentialConnection(connections: ConnectionRecord[]): Connec
   return usableConnections.find((connection) => connection.default) ?? usableConnections[0];
 }
 
-function isUsableCredentialConnection(connection: ConnectionRecord | undefined): connection is ConnectionRecord {
+export function isUsableCredentialConnection(connection: ConnectionRecord | undefined): connection is ConnectionRecord {
   return (
     connection != null &&
     connection.authType !== "no_auth" &&
