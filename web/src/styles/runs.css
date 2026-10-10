@@ -188,6 +188,17 @@
   text-overflow: ellipsis;
 }
 
+.activity-denied {
+  color: var(--destructive);
+}
+
+.activity-approval-chip {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .runs-page-footer {
   display: grid;
   gap: 8px;

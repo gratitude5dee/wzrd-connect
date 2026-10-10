@@ -39,7 +39,7 @@
     "marketplace": "Marketplace",
     "oauthApps": "OAuth Apps",
     "actions": "アクション",
-    "runs": "実行履歴",
+    "activity": "アクティビティ",
     "access": "API Key",
     "docs": "接続ガイド",
     "approvals": "承認",
@@ -77,6 +77,9 @@
       "runs": {
         "title": "実行履歴"
       },
+      "activity": {
+        "title": "アクティビティ"
+      },
       "access": {
         "title": "API Key"
       },
@@ -98,6 +101,7 @@
       "connected": "{{count}} 件接続中",
       "actions": "{{count}} 件のアクション",
       "recent": "{{count}} 件の最近",
+      "requests": "{{count}} 件のリクエスト",
       "pending": "{{count}} 件保留中",
       "tokens": "{{count}} 件のトークン",
       "configured": "{{count}} 件構成済み"
@@ -543,6 +547,51 @@
       "verified": "検証済み",
       "unverified": "未検証",
       "verifyFailed": "検証に失敗しました"
+    }
+  },
+  "activity": {
+    "action": "アクション",
+    "actionPlaceholder": "アクション ID で絞り込む",
+    "applyActionFilter": "アクションフィルターを適用",
+    "agent": "エージェント",
+    "allAgents": "すべてのエージェント",
+    "admin": "admin",
+    "connection": "コネクション",
+    "allConnections": "すべてのコネクション",
+    "status": "ステータス",
+    "allStatuses": "すべてのステータス",
+    "statuses": {
+      "ok": "OK",
+      "pending": "保留中",
+      "denied": "拒否",
+      "failed": "失敗"
+    },
+    "approvalFilter": "承認 {{id}}",
+    "empty": "アクティビティはまだありません — アクションを実行するとここに表示されます。",
+    "emptyFiltered": "現在のフィルターに一致するアクティビティはありません。",
+    "approvalsUnavailable": "このランタイムでは承認を利用できません。",
+    "loadFailed": "アクティビティの読み込みに失敗しました。",
+    "columns": {
+      "time": "時刻",
+      "agent": "エージェント",
+      "request": "リクエスト",
+      "connection": "コネクション",
+      "result": "結果"
+    },
+    "request": {
+      "ran": "{{action}} を実行",
+      "denied": "拒否: {{action}}",
+      "deniedReason": "拒否: {{action}} — {{reason}}",
+      "failed": "失敗: {{action}}",
+      "failedReason": "失敗: {{action}} — {{reason}}",
+      "approval": "{{action}} の承認をリクエスト"
+    },
+    "decision": {
+      "approved": "{{by}} が承認",
+      "denied": "{{by}} が拒否",
+      "executing": "実行中",
+      "expired": "期限切れ",
+      "failed": "失敗"
     }
   },
   "access": {

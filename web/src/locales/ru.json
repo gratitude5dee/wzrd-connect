@@ -39,7 +39,7 @@
     "marketplace": "Marketplace",
     "oauthApps": "OAuth Apps",
     "actions": "Действия",
-    "runs": "Запуски",
+    "activity": "Активность",
     "access": "API Key",
     "docs": "Подключить клиентов",
     "approvals": "Одобрения",
@@ -77,6 +77,9 @@
       "runs": {
         "title": "Запуски"
       },
+      "activity": {
+        "title": "Активность"
+      },
       "access": {
         "title": "API Key"
       },
@@ -98,6 +101,7 @@
       "connected": "{{count}} подключено",
       "actions": "{{count}} действий",
       "recent": "{{count}} недавних",
+      "requests": "Запросов: {{count}}",
       "pending": "{{count}} ожидает",
       "tokens": "{{count}} токенов",
       "configured": "{{count}} настроено"
@@ -543,6 +547,51 @@
       "verified": "Подтверждено",
       "unverified": "Не подтверждено",
       "verifyFailed": "Проверка не удалась"
+    }
+  },
+  "activity": {
+    "action": "Действие",
+    "actionPlaceholder": "Фильтр по ID действия",
+    "applyActionFilter": "Применить фильтр действия",
+    "agent": "Агент",
+    "allAgents": "Все агенты",
+    "admin": "admin",
+    "connection": "Подключение",
+    "allConnections": "Все подключения",
+    "status": "Статус",
+    "allStatuses": "Все статусы",
+    "statuses": {
+      "ok": "OK",
+      "pending": "Ожидание",
+      "denied": "Отказано",
+      "failed": "Ошибка"
+    },
+    "approvalFilter": "Согласование {{id}}",
+    "empty": "Активности пока нет — запустите действие, чтобы увидеть её здесь.",
+    "emptyFiltered": "Нет активности, соответствующей текущим фильтрам.",
+    "approvalsUnavailable": "Согласования недоступны в этой среде выполнения.",
+    "loadFailed": "Не удалось загрузить активность.",
+    "columns": {
+      "time": "Время",
+      "agent": "Агент",
+      "request": "Запрос",
+      "connection": "Подключение",
+      "result": "Результат"
+    },
+    "request": {
+      "ran": "Выполнено {{action}}",
+      "denied": "Отказано: {{action}}",
+      "deniedReason": "Отказано: {{action}} — {{reason}}",
+      "failed": "Сбой: {{action}}",
+      "failedReason": "Сбой: {{action}} — {{reason}}",
+      "approval": "Запрошено согласование для {{action}}"
+    },
+    "decision": {
+      "approved": "согласовано: {{by}}",
+      "denied": "отклонено: {{by}}",
+      "executing": "выполняется",
+      "expired": "истекло",
+      "failed": "сбой"
     }
   },
   "access": {

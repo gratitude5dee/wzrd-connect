@@ -753,6 +753,16 @@ export function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
+/** Day + time, for feeds that span more than a day (PAP's "Oct 10, 12:12 AM"). */
+export function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 export function formatDuration(run: RunLog): string {
   const ms =
     typeof run.durationMs === "number"

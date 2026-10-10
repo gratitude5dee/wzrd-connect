@@ -39,7 +39,7 @@
     "marketplace": "Marketplace",
     "oauthApps": "OAuth Apps",
     "actions": "動作",
-    "runs": "執行記錄",
+    "activity": "活動",
     "access": "API 金鑰",
     "docs": "接入指南",
     "approvals": "核准",
@@ -77,6 +77,9 @@
       "runs": {
         "title": "執行記錄"
       },
+      "activity": {
+        "title": "活動"
+      },
       "access": {
         "title": "API 金鑰"
       },
@@ -98,6 +101,7 @@
       "connected": "{{count}} 個已連線",
       "actions": "{{count}} 個操作",
       "recent": "{{count}} 筆最近記錄",
+      "requests": "{{count}} 個請求",
       "pending": "{{count}} 個待處理",
       "tokens": "{{count}} 個權杖",
       "configured": "{{count}} 個已設定"
@@ -543,6 +547,51 @@
       "verified": "已驗證",
       "unverified": "未驗證",
       "verifyFailed": "驗證失敗"
+    }
+  },
+  "activity": {
+    "action": "操作",
+    "actionPlaceholder": "依操作 ID 篩選",
+    "applyActionFilter": "套用操作篩選",
+    "agent": "代理",
+    "allAgents": "所有代理",
+    "admin": "admin",
+    "connection": "連線",
+    "allConnections": "所有連線",
+    "status": "狀態",
+    "allStatuses": "所有狀態",
+    "statuses": {
+      "ok": "成功",
+      "pending": "待審核",
+      "denied": "已拒絕",
+      "failed": "失敗"
+    },
+    "approvalFilter": "核准 {{id}}",
+    "empty": "尚無活動 — 執行操作後將顯示在這裡。",
+    "emptyFiltered": "沒有符合目前篩選條件的活動。",
+    "approvalsUnavailable": "此執行環境無法使用核准功能。",
+    "loadFailed": "載入活動失敗。",
+    "columns": {
+      "time": "時間",
+      "agent": "代理",
+      "request": "請求",
+      "connection": "連線",
+      "result": "結果"
+    },
+    "request": {
+      "ran": "執行了 {{action}}",
+      "denied": "已拒絕：{{action}}",
+      "deniedReason": "已拒絕：{{action}} — {{reason}}",
+      "failed": "失敗：{{action}}",
+      "failedReason": "失敗：{{action}} — {{reason}}",
+      "approval": "請求核准 {{action}}"
+    },
+    "decision": {
+      "approved": "已由 {{by}} 核准",
+      "denied": "已由 {{by}} 拒絕",
+      "executing": "執行中",
+      "expired": "已過期",
+      "failed": "失敗"
     }
   },
   "access": {

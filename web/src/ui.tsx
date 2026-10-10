@@ -37,6 +37,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, matchPath, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { AccessPage } from "./access-page";
 import { ActionsPage } from "./actions-page";
+import { ActivityPage } from "./activity-page";
 import { ApiError, apiGet, apiPost } from "./api";
 import { ApprovalsPage } from "./approvals-page";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
@@ -48,7 +49,6 @@ import { OverviewPage } from "./overview-page";
 import { PactPage } from "./pact-page";
 import { ProvidersPage } from "./providers-page";
 import { ResourcesPage } from "./resources-page";
-import { RunsPage } from "./runs-page";
 import { InlineError, StatusDot } from "./shared-ui";
 import { readSidebarExpanded, writeSidebarExpanded } from "./sidebar-state";
 import { useThemeMode } from "./theme";
@@ -79,7 +79,7 @@ const navGroups: readonly NavGroup[] = [
       { path: "/overview", labelKey: "nav.overview", icon: Home },
       { path: "/providers", labelKey: "nav.providers", icon: Cable },
       { path: "/actions", labelKey: "nav.actions", icon: TerminalSquare },
-      { path: "/runs", labelKey: "nav.runs", icon: Activity },
+      { path: "/activity", labelKey: "nav.activity", icon: Activity },
     ],
   },
   {
@@ -382,6 +382,8 @@ function headerDetailForSection(section: string | undefined, data: AppData): Hea
       return { key: "shell.detail.connected", count: summary.connectedCount };
     case "actions":
       return { key: "shell.detail.actions", count: summary.actionCount };
+    case "activity":
+      return { key: "shell.detail.requests", count: data.runs.length };
     case "runs":
       return { key: "shell.detail.recent", count: data.runs.length };
     case "approvals":
@@ -606,8 +608,27 @@ function AppShell(props: {
                 element={<ActionsPage data={props.data} gatewayUrl={clientBaseUrl} onRefresh={props.onRefresh} />}
               />
               <Route
+                path="/activity"
+                element={
+                  <ActivityPage
+                    initialRuns={props.data.runs}
+                    runsNextCursor={props.data.runsNextCursor}
+                    connections={props.data.connections}
+                    runtimeTokens={props.data.runtimeTokens}
+                  />
+                }
+              />
+              <Route
                 path="/runs"
-                element={<RunsPage initialRuns={props.data.runs} nextCursor={props.data.runsNextCursor} />}
+                element={
+                  <ActivityPage
+                    initialRuns={props.data.runs}
+                    runsNextCursor={props.data.runsNextCursor}
+                    connections={props.data.connections}
+                    runtimeTokens={props.data.runtimeTokens}
+                    preset="run"
+                  />
+                }
               />
               <Route path="/approvals" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
               <Route path="/approvals/:approvalId" element={<ApprovalsPage onRefresh={props.onRefresh} />} />
@@ -866,6 +887,9 @@ function headingForPath(pathname: string): string {
   }
   if (section === "actions") {
     return "actions";
+  }
+  if (section === "activity") {
+    return "activity";
   }
   if (section === "runs") {
     return "runs";

@@ -239,6 +239,7 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
         hasRuntimeTokens: hasStoredRuntimeTokens,
         resolveRuntimeToken: (token) => runtimeTokens.resolveToken(token),
         verifyRuntimeJwt: options.verifyRuntimeJwt,
+        recordDeniedAttempt: (attempt) => actions.recordDeniedRequest(attempt),
       },
       actionPolicy: options.actionPolicy,
       logger: options.logger,

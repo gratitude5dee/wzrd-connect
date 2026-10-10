@@ -22,6 +22,22 @@ export interface LocalAuthOptions {
   hasRuntimeTokens?(): Promise<boolean>;
   resolveRuntimeToken?(token: string): Promise<RuntimeGrant | undefined>;
   verifyRuntimeJwt?: RuntimeJwtVerifier;
+  /**
+   * Sink for requests the middleware refused before routing, so they can join
+   * the run log the activity feed renders — PAP's red "tried to" rows.
+   */
+  recordDeniedAttempt?(attempt: DeniedRequestAttempt): void | Promise<void>;
+}
+
+/** One request the auth middleware refused before it could reach a handler. */
+export interface DeniedRequestAttempt {
+  method: string;
+  path: string;
+  status: number;
+  errorCode: string;
+  message: string;
+  /** Resolvable stored-token id behind the presented bearer credential, if any. */
+  runtimeTokenId?: string;
 }
 
 export interface LocalAuthSession {
@@ -92,6 +108,11 @@ export function createLocalAuthMiddleware(options: LocalAuthOptions): Middleware
         options.verifyRuntimeJwt ||
         (options.hasRuntimeTokens ? await options.hasRuntimeTokens() : options.resolveRuntimeToken !== undefined))
     ) {
+      await recordDeniedAttempt(context, options, scope, {
+        status: 403,
+        errorCode: "forbidden",
+        message: "Configure an admin token to manage connections.",
+      });
       return writeRuntimeFailure(context, {
         status: 403,
         errorCode: "forbidden",
@@ -121,21 +142,58 @@ export function createLocalAuthMiddleware(options: LocalAuthOptions): Middleware
     }
 
     if (isConnectionManagementPath(context.req.path)) {
-      return writeRuntimeFailure(context, {
-        status: 401,
-        errorCode: "unauthorized",
-        message: "A valid administrator bearer token is required.",
-      });
+      const message = "A valid administrator bearer token is required.";
+      await recordDeniedAttempt(context, options, scope, { status: 401, errorCode: "unauthorized", message });
+      return writeRuntimeFailure(context, { status: 401, errorCode: "unauthorized", message });
     }
     if (context.req.path.startsWith("/v1/")) {
-      return writeRuntimeFailure(context, {
-        status: 401,
-        errorCode: "unauthorized",
-        message: "A valid local bearer token is required.",
-      });
+      const message = "A valid local bearer token is required.";
+      await recordDeniedAttempt(context, options, scope, { status: 401, errorCode: "unauthorized", message });
+      return writeRuntimeFailure(context, { status: 401, errorCode: "unauthorized", message });
     }
+    await recordDeniedAttempt(context, options, scope, {
+      status: 401,
+      errorCode: "unauthorized",
+      message: "A valid local bearer token is required.",
+    });
     return jsonError(context, 401, "unauthorized", "A valid local bearer token is required.");
   };
+}
+
+/**
+ * Auth-layer rejections never reach the action runner, so without this they
+ * leave no audit trail. When a sink is configured each denied request is
+ * recorded, with the presented stored-token id resolved when the credential
+ * was real but scoped wrong. Only credential-bearing attempts get logged on
+ * admin paths (cookie-less browsers and probes stay silent); runtime paths
+ * expect a bearer, so a missing one counts too.
+ */
+async function recordDeniedAttempt(
+  context: Context,
+  options: LocalAuthOptions,
+  scope: AuthScope,
+  attempt: { status: number; errorCode: string; message: string },
+): Promise<void> {
+  if (!options.recordDeniedAttempt) {
+    return;
+  }
+  const bearer = readBearerToken(context);
+  if (bearer === undefined && scope !== "runtime") {
+    return;
+  }
+  const runtimeTokenId = bearer === undefined ? undefined : (await options.resolveRuntimeToken?.(bearer))?.tokenId;
+  try {
+    await options.recordDeniedAttempt({
+      method: context.req.method,
+      path: context.req.path,
+      status: attempt.status,
+      errorCode: attempt.errorCode,
+      message: attempt.message,
+      runtimeTokenId,
+    });
+  } catch {
+    // Auditing must never change the auth decision.
+  }
 }
 
 async function installLocalAuthCookie(context: Context, options: LocalAuthOptions): Promise<void> {
