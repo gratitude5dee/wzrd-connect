@@ -34,7 +34,7 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
+import { Link, matchPath, Navigate, NavLink, Route, Routes, useLocation } from "react-router";
 import { AccessPage } from "./access-page";
 import { ActionsPage } from "./actions-page";
 import { ApiError, apiGet, apiPost } from "./api";
@@ -719,12 +719,12 @@ function ShellNavItem(props: {
   onNavigate(): void;
 }): ReactNode {
   const Icon = props.item.icon;
+  // A static className: Radix Slot (TooltipTrigger asChild) stringifies the
+  // function form NavLink accepts, which would drop the nav-item styles.
+  const location = useLocation();
+  const isActive = matchPath({ path: props.item.path, end: false }, location.pathname) !== null;
   const link = (
-    <NavLink
-      className={({ isActive }) => (isActive ? "nav-item active" : "nav-item")}
-      to={props.item.path}
-      onClick={props.onNavigate}
-    >
+    <NavLink className={isActive ? "nav-item active" : "nav-item"} to={props.item.path} onClick={props.onNavigate}>
       <Icon size={16} />
       <span className="nav-item-label">{props.label}</span>
       {props.badge > 0 ? <span className="nav-badge">{props.badge}</span> : null}
