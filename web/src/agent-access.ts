@@ -145,11 +145,7 @@ export function setAgentActionAllowed(options: {
     if (rules.allowedActions.length > 0 && !covered) {
       rules.allowedActions = compactActionRules([...rules.allowedActions, options.action.id], options.providers);
     }
-    if (
-      options.connectionId &&
-      allowedConnections.length > 0 &&
-      !allowedConnections.includes(options.connectionId)
-    ) {
+    if (options.connectionId && allowedConnections.length > 0 && !allowedConnections.includes(options.connectionId)) {
       allowedConnections = [...allowedConnections, options.connectionId];
     }
   } else if (!rules.blockedActions.some((rule) => matchesActionRule(rule, options.action.id))) {
