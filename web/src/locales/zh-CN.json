@@ -43,7 +43,8 @@
     "access": "API Key",
     "docs": "接入指南",
     "approvals": "审批",
-    "pact": "PACT"
+    "pact": "PACT",
+    "agents": "代理"
   },
   "shell": {
     "invalidUnlockToken": "请输入有效的管理员 token 来解锁控制台。",
@@ -91,6 +92,9 @@
       },
       "pact": {
         "title": "PACT"
+      },
+      "agents": {
+        "title": "代理"
       }
     },
     "navGroup": {
@@ -104,7 +108,8 @@
       "requests": "{{count}} 个请求",
       "pending": "{{count}} 个待处理",
       "tokens": "{{count}} 个令牌",
-      "configured": "{{count}} 个已配置"
+      "configured": "{{count}} 个已配置",
+      "agents": "{{count}} 个代理"
     },
     "settings": "设置",
     "settingsDescription": "管理语言、外观、连接与运行时。",
@@ -1098,6 +1103,80 @@
         "mode": "模式",
         "scopes": "已授权的 scope"
       }
+    }
+  },
+  "agents": {
+    "title": "代理",
+    "description": "API 代理及其令牌访问权限。",
+    "newAgent": "新建代理",
+    "advancedPolicy": "高级策略",
+    "resetFailed": "重置令牌失败。",
+    "empty": {
+      "title": "没有代理",
+      "description": "创建一个代理以使用运行时令牌连接客户端。"
+    },
+    "missing": {
+      "title": "未找到代理",
+      "description": "此代理已不存在。"
+    },
+    "list": {
+      "name": "名称",
+      "id": "ID",
+      "connections": "连接",
+      "actions": "操作",
+      "lastActive": "最近活跃",
+      "connectionsCount": "{{allowed}}/{{total}}",
+      "actionsCount": "{{allowed}}/{{total}}"
+    },
+    "detail": {
+      "description": "此代理的运行时令牌、登录和访问权限。"
+    },
+    "signin": {
+      "title": "登录",
+      "token": "令牌",
+      "hidden": "密码已隐藏。",
+      "hiddenHint": "重置它以获取新令牌。",
+      "shownOnce": "此令牌仅显示一次。请立即复制。",
+      "reset": "重置",
+      "serverUrl": "MCP 服务器 URL",
+      "copy": "复制",
+      "config": "客户端配置",
+      "created": "创建于 {{date}}",
+      "lastUsed": "最近使用 {{date}}"
+    },
+    "access": {
+      "title": "访问",
+      "changedCount": "{{count}} 项已更改",
+      "filterPlaceholder": "筛选操作",
+      "changedOnly": "仅已更改",
+      "default": "默认",
+      "changed": "已更改",
+      "highRisk": "高风险",
+      "blockedByPolicy": "已被默认策略阻止",
+      "makeDefault": "设为所有代理的默认值",
+      "reset": "恢复默认",
+      "defaultChanged": "已为 {{count}} 个代理更改",
+      "saveFailed": "保存访问更改失败。",
+      "noConnections": "暂无可用的连接。请先连接一个服务。",
+      "noMatches": "没有匹配当前筛选的操作。"
+    },
+    "activity": {
+      "title": "活动",
+      "viewAll": "查看全部",
+      "empty": "此代理暂无请求。"
+    },
+    "reset": {
+      "title": "重置令牌？",
+      "description": "将吊销当前令牌并以相同访问权限创建新令牌。客户端需要更新到新令牌。",
+      "confirm": "重置令牌"
+    },
+    "revoke": {
+      "title": "吊销此代理？",
+      "description": "令牌将立即失效。此操作不可撤销。"
+    },
+    "defaults": {
+      "title": "默认策略",
+      "description": "适用于所有代理的部署与运行时规则。"
     }
   }
 }

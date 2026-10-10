@@ -11,7 +11,6 @@ import type { PolicyEditorDraft, PolicyEvaluation, PolicyResource } from "./poli
 import type { ReactNode, SubmitEvent } from "react";
 
 import { useTranslate } from "@embra/i18n/react";
-import { useClipboard } from "foxact/use-clipboard";
 import {
   AlertTriangle,
   Check,
@@ -27,56 +26,42 @@ import {
   Save,
   ShieldCheck,
   SlidersHorizontal,
-  Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { apiDelete, apiPost, apiPut } from "./api";
+import { useId, useMemo, useState } from "react";
 import { formatDate } from "./model";
 import {
   countAllowedActions,
   countAllowedProxies,
-  createPolicyEditorDraft,
   evaluatePolicy,
   filterPolicyRuleCandidates,
   parsePolicyLines,
-  policyEditorDraftEquals,
   policyLayers,
   policyRuleCandidates,
-  policyRulesFromEditorDraft,
   validatePolicyEditorDraft,
 } from "./policy";
 import { PolicyEditor } from "./policy-editor";
 import { PolicySuggestionInput } from "./policy-suggestion-input";
-import { Badge, EmptyState, FormStatus } from "./shared-ui";
+import { Badge, FormStatus } from "./shared-ui";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-
-interface AccessPageProps {
-  providers: ProviderDefinition[];
-  connections: ConnectionRecord[];
-  tokens: RuntimeTokenSummary[];
-  policy: RuntimePolicyState;
-  onRefresh(): void;
-}
 
 export interface ConnectionGrantDraft {
   mode: "unrestricted" | "restricted";
   ids: string[];
 }
 
-interface ConnectionGrantOption {
+export interface ConnectionGrantOption {
   id: string;
   name: string;
   provider: string;
 }
 
-interface CreateTokenDialogProps {
+export interface CreateTokenDialogProps {
   name: string;
   created: RuntimeTokenCreation | null;
   status: string | null;
@@ -104,361 +89,7 @@ export function createTokenDialogMode(created: RuntimeTokenCreation | null): "fo
   return created ? "created" : "form";
 }
 
-export function AccessPage(props: AccessPageProps): ReactNode {
-  const t = useTranslate();
-  const [name, setName] = useState("");
-  const [createDraft, setCreateDraft] = useState(() => createPolicyEditorDraft(emptyPolicyRules()));
-  const [createConnections, setCreateConnections] = useState(() => createConnectionGrantDraft());
-  const [created, setCreated] = useState<RuntimeTokenCreation | null>(null);
-  const [editingToken, setEditingToken] = useState<RuntimeTokenSummary | null>(null);
-  const [editTokenDraft, setEditTokenDraft] = useState(() => createPolicyEditorDraft(emptyPolicyRules()));
-  const [editConnections, setEditConnections] = useState(() => createConnectionGrantDraft());
-  const [policy, setPolicy] = useState(props.policy);
-  const [runtimeDraft, setRuntimeDraft] = useState(() => createPolicyEditorDraft(props.policy.runtime));
-  const [policyExpanded, setPolicyExpanded] = useState(true);
-  const [runtimeEditing, setRuntimeEditing] = useState(false);
-  const [runtimeSaving, setRuntimeSaving] = useState(false);
-  const [confirmRuntimeSave, setConfirmRuntimeSave] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [runtimeStatus, setRuntimeStatus] = useState<string | null>(null);
-  const [tokenStatus, setTokenStatus] = useState<string | null>(null);
-  const previousPolicy = useRef(props.policy);
-  const { copy, copied } = useClipboard();
-  const savedRuntimeDraft = useMemo(() => createPolicyEditorDraft(policy.runtime), [policy.runtime]);
-  const runtimeDirty = !policyEditorDraftEquals(runtimeDraft, savedRuntimeDraft);
-  const runtimeRules = useMemo(() => policyRulesFromEditorDraft(runtimeDraft), [runtimeDraft]);
-  const runtimeDraftState: RuntimePolicyState = useMemo(
-    () => ({ ...policy, runtime: runtimeRules }),
-    [policy, runtimeRules],
-  );
-  const runtimeIssues = validatePolicyEditorDraft(runtimeDraft, true);
-  const connectionOptions = useMemo(
-    () => connectionGrantOptions(props.connections, props.providers),
-    [props.connections, props.providers],
-  );
-  const connectionLabels = useMemo(
-    () => new Map(connectionOptions.map((option) => [option.id, `${option.provider} · ${option.name}`])),
-    [connectionOptions],
-  );
-  const runtimeRisk = useMemo(
-    () => (runtimeEditing ? policyRisk(runtimeDraftState, props.providers) : null),
-    [runtimeDraftState, props.providers, runtimeEditing],
-  );
-
-  useEffect(() => {
-    if (props.policy === previousPolicy.current) {
-      return;
-    }
-    previousPolicy.current = props.policy;
-    if (!runtimeEditing) {
-      setPolicy(props.policy);
-      setRuntimeDraft(createPolicyEditorDraft(props.policy.runtime));
-    }
-  }, [props.policy, runtimeEditing]);
-
-  async function submitToken(event: SubmitEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    setTokenStatus(t("access.creating"));
-    setCreated(null);
-    const rules = policyRulesFromEditorDraft(createDraft);
-    try {
-      const result = await apiPost<RuntimeTokenCreation>("/api/runtime-tokens", {
-        name,
-        ...runtimeTokenPolicyBody(rules, createConnections),
-      });
-      setCreated(result);
-      setName("");
-      setCreateDraft(createPolicyEditorDraft(emptyPolicyRules()));
-      setCreateConnections(createConnectionGrantDraft());
-      setTokenStatus(t("access.created"));
-      props.onRefresh();
-    } catch (error) {
-      setTokenStatus(error instanceof Error ? error.message : t("access.createFailed"));
-    }
-  }
-
-  async function persistRuntimePolicy(): Promise<void> {
-    setRuntimeSaving(true);
-    setRuntimeStatus(t("access.policy.saving"));
-    try {
-      const updated = await apiPut<RuntimePolicyState>("/api/runtime-policy", runtimeRules);
-      setPolicy(updated);
-      setRuntimeDraft(createPolicyEditorDraft(updated.runtime));
-      setRuntimeStatus(t("access.policy.saved"));
-      setRuntimeEditing(false);
-      props.onRefresh();
-    } catch (error) {
-      setRuntimeStatus(error instanceof Error ? error.message : t("access.policy.saveFailed"));
-    } finally {
-      setRuntimeSaving(false);
-    }
-  }
-
-  function requestRuntimeSave(): void {
-    if (runtimeIssues.length > 0 || !runtimeDirty) {
-      return;
-    }
-    if (runtimeRisk) {
-      setConfirmRuntimeSave(true);
-      return;
-    }
-    void persistRuntimePolicy();
-  }
-
-  async function saveTokenPolicy(event: SubmitEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (!editingToken) {
-      return;
-    }
-    const rules = policyRulesFromEditorDraft(editTokenDraft);
-    setTokenStatus(t("access.policy.saving"));
-    try {
-      await apiPut(`/api/runtime-tokens/${editingToken.id}`, runtimeTokenPolicyBody(rules, editConnections));
-      setEditingToken(null);
-      setTokenStatus(t("access.policy.saved"));
-      props.onRefresh();
-    } catch (error) {
-      setTokenStatus(error instanceof Error ? error.message : t("access.policy.saveFailed"));
-    }
-  }
-
-  async function revoke(id: string): Promise<void> {
-    setTokenStatus(t("access.revoking"));
-    try {
-      await apiDelete(`/api/runtime-tokens/${id}`);
-      setTokenStatus(t("access.revoked"));
-      props.onRefresh();
-    } catch (error) {
-      setTokenStatus(error instanceof Error ? error.message : t("access.revokeFailed"));
-    }
-  }
-
-  function openCreate(): void {
-    setName("");
-    setCreateDraft(createPolicyEditorDraft(emptyPolicyRules()));
-    setCreateConnections(createConnectionGrantDraft());
-    setCreated(null);
-    setTokenStatus(null);
-    setCreateOpen(true);
-  }
-
-  function closeCreate(): void {
-    setCreateOpen(false);
-    setName("");
-    setCreateDraft(createPolicyEditorDraft(emptyPolicyRules()));
-    setCreateConnections(createConnectionGrantDraft());
-    setCreated(null);
-    setTokenStatus(null);
-  }
-
-  function openPolicyEditor(token: RuntimeTokenSummary): void {
-    setEditingToken(token);
-    setEditTokenDraft(
-      createPolicyEditorDraft({
-        allowedActions: token.allowedActions,
-        blockedActions: token.blockedActions,
-        allowedProxies: token.allowedProxies,
-        blockedProxies: [],
-        allowedTriggers: token.allowedTriggers ?? [],
-        blockedTriggers: [],
-        requireApprovalOperations: token.requireApprovalOperations ?? [],
-        approvalRequiredActions: token.approvalRequiredActions ?? [],
-      }),
-    );
-    setEditConnections(createConnectionGrantDraft(token.allowedConnections ?? []));
-    setTokenStatus(null);
-  }
-
-  function startRuntimeEditing(): void {
-    setRuntimeDraft(createPolicyEditorDraft(policy.runtime));
-    setRuntimeStatus(null);
-    setRuntimeEditing(true);
-  }
-
-  function discardRuntimeEditing(): void {
-    setConfirmRuntimeSave(false);
-    setPolicy(props.policy);
-    setRuntimeDraft(createPolicyEditorDraft(props.policy.runtime));
-    setRuntimeStatus(null);
-    setRuntimeEditing(false);
-  }
-
-  return (
-    <section className="detail-panel access-panel">
-      <details
-        className="access-section-disclosure"
-        open={policyExpanded}
-        onToggle={(event) => setPolicyExpanded(event.currentTarget.open)}
-      >
-        <summary className="access-section-heading">
-          <div>
-            <h2>{t("access.policy.title")}</h2>
-            <p>{t("access.policy.description")}</p>
-          </div>
-          <ChevronDown size={17} />
-        </summary>
-
-        <div className="access-section-content">
-          <PolicyBaseline policy={policy} providers={props.providers} />
-          <PolicyTester policy={policy} providers={props.providers} tokens={props.tokens} />
-          <div className="access-settings-list">
-            <PolicyLayerDisclosure rules={policy.deployment} />
-            <RuntimePolicySummary policy={policy} onEdit={startRuntimeEditing} />
-          </div>
-          {!runtimeEditing && runtimeStatus ? <FormStatus message={runtimeStatus} /> : null}
-        </div>
-      </details>
-
-      <div className="access-section-heading">
-        <div>
-          <h2>{t("access.title")}</h2>
-          <p>{t("access.description")}</p>
-        </div>
-
-        <Button variant="outline" size="sm" type="button" onClick={openCreate}>
-          <KeyRound size={16} />
-          {t("access.createToken")}
-        </Button>
-      </div>
-
-      {!createOpen && tokenStatus ? <FormStatus message={tokenStatus} /> : null}
-
-      <section className="table-panel">
-        {props.tokens.length === 0 ? (
-          <EmptyState
-            icon={<KeyRound size={20} />}
-            title={t("access.noTokensTitle")}
-            description={t("access.noTokensDescription")}
-            density="compact"
-          />
-        ) : (
-          <Table className="token-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("access.table.name")}</TableHead>
-                <TableHead>{t("access.table.status")}</TableHead>
-                <TableHead>{t("access.table.policy")}</TableHead>
-                <TableHead>{t("access.table.created")}</TableHead>
-                <TableHead>{t("access.table.lastUsed")}</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {props.tokens.map((token) => {
-                const policySummary = tokenPolicySummary(token, t);
-                const connectionSummary = tokenConnectionSummary(token, t, connectionLabels);
-                return (
-                  <TableRow key={token.id}>
-                    <TableCell>
-                      <strong>{token.name}</strong>
-                    </TableCell>
-                    <TableCell>
-                      <Badge tone="success">{t("common.active")}</Badge>
-                    </TableCell>
-                    <TableCell className="token-policy-cell">
-                      <div className="token-policy-summary">
-                        <span title={policySummary}>{policySummary}</span>
-                        <span className="token-policy-connections" title={connectionSummary.title}>
-                          {connectionSummary.preview}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatDate(token.createdAt)}</TableCell>
-                    <TableCell>{token.lastUsedAt ? formatDate(token.lastUsedAt) : ""}</TableCell>
-                    <TableCell className="table-actions">
-                      <div className="token-table-actions">
-                        <Button variant="outline" size="sm" onClick={() => openPolicyEditor(token)}>
-                          <Pencil size={15} />
-                          {t("access.policy.edit")}
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => void revoke(token.id)}>
-                          <Trash2 size={15} />
-                          {t("access.revoke")}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </section>
-
-      {runtimeEditing ? (
-        <RuntimePolicyDialog
-          draft={runtimeDraft}
-          draftState={runtimeDraftState}
-          providers={props.providers}
-          dirty={runtimeDirty}
-          risk={runtimeRisk}
-          saving={runtimeSaving}
-          status={runtimeStatus}
-          onDraftChange={setRuntimeDraft}
-          onDiscard={discardRuntimeEditing}
-          onSave={requestRuntimeSave}
-        />
-      ) : null}
-
-      {createOpen ? (
-        <CreateTokenDialog
-          name={name}
-          created={created}
-          status={tokenStatus}
-          copied={copied}
-          draft={createDraft}
-          connections={createConnections}
-          connectionOptions={connectionOptions}
-          providers={props.providers}
-          onNameChange={setName}
-          onDraftChange={setCreateDraft}
-          onConnectionsChange={setCreateConnections}
-          onSubmit={submitToken}
-          onCopy={(token) => void copy(token)}
-          onClose={closeCreate}
-        />
-      ) : null}
-      {editingToken ? (
-        <EditTokenPolicyDialog
-          token={editingToken}
-          draft={editTokenDraft}
-          connections={editConnections}
-          connectionOptions={connectionOptions}
-          providers={props.providers}
-          status={tokenStatus}
-          onDraftChange={setEditTokenDraft}
-          onConnectionsChange={setEditConnections}
-          onSubmit={saveTokenPolicy}
-          onClose={() => setEditingToken(null)}
-        />
-      ) : null}
-      <Dialog open={confirmRuntimeSave} onOpenChange={setConfirmRuntimeSave}>
-        <DialogContent className="max-w-[min(480px,calc(100vw-2rem))]">
-          <DialogHeader>
-            <DialogTitle>{t("access.policy.confirm.title")}</DialogTitle>
-            <DialogDescription>{t(`access.policy.confirm.${runtimeRisk ?? "actions"}`)}</DialogDescription>
-          </DialogHeader>
-          <div className="button-row">
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setConfirmRuntimeSave(false);
-                void persistRuntimePolicy();
-              }}
-            >
-              {t("access.policy.confirm.save")}
-            </Button>
-            <Button variant="outline" onClick={() => setConfirmRuntimeSave(false)}>
-              {t("access.policy.confirm.keepEditing")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </section>
-  );
-}
-
-function PolicyBaseline(props: { policy: RuntimePolicyState; providers: ProviderDefinition[] }): ReactNode {
+export function PolicyBaseline(props: { policy: RuntimePolicyState; providers: ProviderDefinition[] }): ReactNode {
   const t = useTranslate();
   const titleId = useId();
   const { actions, proxies } = useMemo(() => {
@@ -507,7 +138,7 @@ function PolicyBaseline(props: { policy: RuntimePolicyState; providers: Provider
   );
 }
 
-function PolicyTester(props: {
+export function PolicyTester(props: {
   policy: RuntimePolicyState;
   providers: ProviderDefinition[];
   tokens: RuntimeTokenSummary[];
@@ -611,7 +242,7 @@ function PolicyTester(props: {
   );
 }
 
-function PolicyDecisionTrace(props: { value: string; result: PolicyEvaluation }): ReactNode {
+export function PolicyDecisionTrace(props: { value: string; result: PolicyEvaluation }): ReactNode {
   const t = useTranslate();
   return (
     <details className="policy-decision-trace">
@@ -637,7 +268,7 @@ function PolicyDecisionTrace(props: { value: string; result: PolicyEvaluation })
   );
 }
 
-function PolicyLayerDisclosure(props: { rules: PolicyRules }): ReactNode {
+export function PolicyLayerDisclosure(props: { rules: PolicyRules }): ReactNode {
   const t = useTranslate();
   return (
     <details className="policy-layer-disclosure">
@@ -654,7 +285,7 @@ function PolicyLayerDisclosure(props: { rules: PolicyRules }): ReactNode {
   );
 }
 
-function RuntimePolicySummary(props: { policy: RuntimePolicyState; onEdit(): void }): ReactNode {
+export function RuntimePolicySummary(props: { policy: RuntimePolicyState; onEdit(): void }): ReactNode {
   const t = useTranslate();
   return (
     <section className="runtime-policy-summary">
@@ -676,7 +307,7 @@ function RuntimePolicySummary(props: { policy: RuntimePolicyState; onEdit(): voi
   );
 }
 
-interface RuntimePolicyDialogProps {
+export interface RuntimePolicyDialogProps {
   draft: PolicyEditorDraft;
   draftState: RuntimePolicyState;
   providers: ProviderDefinition[];
@@ -689,7 +320,7 @@ interface RuntimePolicyDialogProps {
   onSave(): void;
 }
 
-function RuntimePolicyDialog(props: RuntimePolicyDialogProps): ReactNode {
+export function RuntimePolicyDialog(props: RuntimePolicyDialogProps): ReactNode {
   const t = useTranslate();
   return (
     <Dialog open onOpenChange={(open) => (!open ? props.onDiscard() : undefined)}>
@@ -709,7 +340,7 @@ function RuntimePolicyDialog(props: RuntimePolicyDialogProps): ReactNode {
   );
 }
 
-function RuntimePolicyEditor(props: RuntimePolicyDialogProps): ReactNode {
+export function RuntimePolicyEditor(props: RuntimePolicyDialogProps): ReactNode {
   const t = useTranslate();
   const issues = validatePolicyEditorDraft(props.draft, true);
 
@@ -788,7 +419,7 @@ function PolicyRuleReadout(props: { rules: PolicyRules }): ReactNode {
   );
 }
 
-function CreateTokenDialog(props: CreateTokenDialogProps): ReactNode {
+export function CreateTokenDialog(props: CreateTokenDialogProps): ReactNode {
   const t = useTranslate();
   const mode = createTokenDialogMode(props.created);
   const created = mode === "created" ? props.created : null;
@@ -883,7 +514,7 @@ function CreateTokenDialog(props: CreateTokenDialogProps): ReactNode {
   );
 }
 
-interface EditTokenPolicyDialogProps {
+export interface EditTokenPolicyDialogProps {
   token: RuntimeTokenSummary;
   draft: PolicyEditorDraft;
   connections: ConnectionGrantDraft;
@@ -896,7 +527,7 @@ interface EditTokenPolicyDialogProps {
   onClose(): void;
 }
 
-function EditTokenPolicyDialog(props: EditTokenPolicyDialogProps): ReactNode {
+export function EditTokenPolicyDialog(props: EditTokenPolicyDialogProps): ReactNode {
   const t = useTranslate();
   const issues = validatePolicyEditorDraft(props.draft, true);
   const connectionIssue = connectionGrantIssue(props.connections);
@@ -970,42 +601,13 @@ export function policyRulesFromDraft(draft: PolicyDraft): PolicyRules {
   };
 }
 
-function tokenPolicySummary(token: RuntimeTokenSummary, t: NonNullable<ReturnType<typeof useTranslate>>): string {
-  return t("access.policy.tokenSummary", {
-    allowed: token.allowedActions.length,
-    blocked: token.blockedActions.length,
-    proxies: token.allowedProxies.length,
-  });
-}
-
-function tokenConnectionSummary(
-  token: RuntimeTokenSummary,
-  t: NonNullable<ReturnType<typeof useTranslate>>,
-  connectionLabels: Map<string, string>,
-): { preview: string; title: string } {
-  const allowedConnections = token.allowedConnections ?? [];
-  if (allowedConnections.length === 0) {
-    const unrestricted = t("access.policy.connectionsUnrestricted");
-    return { preview: unrestricted, title: unrestricted };
-  }
-
-  const labels = allowedConnections.map((id) => connectionLabels.get(id) ?? id);
-  const remaining = labels.length - 2;
-  return {
-    preview: t("access.policy.connectionsRestricted", {
-      names: `${labels.slice(0, 2).join(", ")}${remaining > 0 ? ` +${remaining}` : ""}`,
-    }),
-    title: labels.join(", "),
-  };
-}
-
-function policyLayerSummary(rules: PolicyRules, t: NonNullable<ReturnType<typeof useTranslate>>): string {
+export function policyLayerSummary(rules: PolicyRules, t: NonNullable<ReturnType<typeof useTranslate>>): string {
   const action = resourcePolicySummary(rules.allowedActions, rules.blockedActions, t);
   const proxy = resourcePolicySummary(rules.allowedProxies, rules.blockedProxies, t);
   return t("access.policy.layerSummary", { action, proxy });
 }
 
-function resourcePolicySummary(
+export function resourcePolicySummary(
   allowed: string[],
   blocked: string[],
   t: NonNullable<ReturnType<typeof useTranslate>>,
@@ -1019,11 +621,14 @@ function resourcePolicySummary(
     : t("access.policy.summary.withBlocked", { allow: allowSummary, count: blocked.length });
 }
 
-function configuredRuleCount(rules: PolicyRules): number {
+export function configuredRuleCount(rules: PolicyRules): number {
   return Object.values(rules).reduce((count, values) => count + (values?.length ?? 0), 0);
 }
 
-function policyRisk(policy: RuntimePolicyState, providers: ProviderDefinition[]): "actions" | "proxies" | "all" | null {
+export function policyRisk(
+  policy: RuntimePolicyState,
+  providers: ProviderDefinition[],
+): "actions" | "proxies" | "all" | null {
   const layers = policyLayers(policy);
   const actions = countAllowedActions(providers, layers);
   const proxies = countAllowedProxies(providers, layers);
@@ -1032,7 +637,7 @@ function policyRisk(policy: RuntimePolicyState, providers: ProviderDefinition[])
   return actionsBlocked && proxiesBlocked ? "all" : actionsBlocked ? "actions" : proxiesBlocked ? "proxies" : null;
 }
 
-function emptyPolicyRules(): PolicyRules {
+export function emptyPolicyRules(): PolicyRules {
   return { allowedActions: [], blockedActions: [], allowedProxies: [], blockedProxies: [] };
 }
 
@@ -1100,14 +705,14 @@ export function connectionGrantOptions(
   });
 }
 
-function connectionGrantIssue(draft: ConnectionGrantDraft): "required" | "too_many" | undefined {
+export function connectionGrantIssue(draft: ConnectionGrantDraft): "required" | "too_many" | undefined {
   if (draft.mode !== "restricted") {
     return undefined;
   }
   return draft.ids.length === 0 ? "required" : draft.ids.length > connectionListMaxItems ? "too_many" : undefined;
 }
 
-interface ConnectionGrantEditorProps {
+export interface ConnectionGrantEditorProps {
   draft: ConnectionGrantDraft;
   options: ConnectionGrantOption[];
   onChange(draft: ConnectionGrantDraft): void;

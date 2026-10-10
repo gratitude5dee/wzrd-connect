@@ -43,7 +43,8 @@
     "access": "API Key",
     "docs": "Connecter des clients",
     "approvals": "Approbations",
-    "pact": "PACT"
+    "pact": "PACT",
+    "agents": "Agents"
   },
   "shell": {
     "invalidUnlockToken": "Saisissez un token administrateur valide pour déverrouiller la console.",
@@ -91,6 +92,9 @@
       },
       "pact": {
         "title": "PACT"
+      },
+      "agents": {
+        "title": "Agents"
       }
     },
     "navGroup": {
@@ -104,7 +108,8 @@
       "requests": "{{count}} requêtes",
       "pending": "{{count}} en attente",
       "tokens": "{{count}} jetons",
-      "configured": "{{count}} configurés"
+      "configured": "{{count}} configurés",
+      "agents": "Agents : {{count}}"
     },
     "settings": "Paramètres",
     "settingsDescription": "Gérer la langue, l’apparence, les connexions et le runtime.",
@@ -1098,6 +1103,80 @@
         "mode": "Mode",
         "scopes": "Scopes accordés"
       }
+    }
+  },
+  "agents": {
+    "title": "Agents",
+    "description": "Agents API et leurs accès par jeton.",
+    "newAgent": "Nouvel agent",
+    "advancedPolicy": "Politique avancée",
+    "resetFailed": "Échec de la réinitialisation du jeton.",
+    "empty": {
+      "title": "Aucun agent",
+      "description": "Créez un agent pour connecter des clients avec un jeton d'exécution."
+    },
+    "missing": {
+      "title": "Agent introuvable",
+      "description": "Cet agent n'existe plus."
+    },
+    "list": {
+      "name": "Nom",
+      "id": "ID",
+      "connections": "Connexions",
+      "actions": "Actions",
+      "lastActive": "Dernière activité",
+      "connectionsCount": "{{allowed}}/{{total}}",
+      "actionsCount": "{{allowed}}/{{total}}"
+    },
+    "detail": {
+      "description": "Jeton, connexion et accès de cet agent."
+    },
+    "signin": {
+      "title": "Connexion",
+      "token": "Jeton",
+      "hidden": "Mot de passe masqué.",
+      "hiddenHint": "Réinitialisez-le pour en obtenir un nouveau.",
+      "shownOnce": "Ce jeton n'est affiché qu'une fois. Copiez-le maintenant.",
+      "reset": "Réinitialiser",
+      "serverUrl": "URL du serveur MCP",
+      "copy": "Copier",
+      "config": "Configuration client",
+      "created": "Créé le {{date}}",
+      "lastUsed": "Dernière utilisation le {{date}}"
+    },
+    "access": {
+      "title": "Accès",
+      "changedCount": "{{count}} modifiés",
+      "filterPlaceholder": "Filtrer les actions",
+      "changedOnly": "Modifiés uniquement",
+      "default": "Par défaut",
+      "changed": "Modifié",
+      "highRisk": "Risque élevé",
+      "blockedByPolicy": "Bloqué par la politique par défaut",
+      "makeDefault": "Définir comme défaut pour tous les agents",
+      "reset": "Rétablir le défaut",
+      "defaultChanged": "Modifié pour {{count}} agents",
+      "saveFailed": "Échec de l'enregistrement des accès.",
+      "noConnections": "Aucune connexion utilisable. Connectez d'abord un service.",
+      "noMatches": "Aucune action ne correspond au filtre."
+    },
+    "activity": {
+      "title": "Activité",
+      "viewAll": "Tout voir",
+      "empty": "Aucune requête pour cet agent."
+    },
+    "reset": {
+      "title": "Réinitialiser le jeton ?",
+      "description": "Le jeton actuel est révoqué et un nouveau est créé avec le même accès. Les clients devront utiliser le nouveau jeton.",
+      "confirm": "Réinitialiser le jeton"
+    },
+    "revoke": {
+      "title": "Révoquer cet agent ?",
+      "description": "Le jeton cesse de fonctionner immédiatement. Action irréversible."
+    },
+    "defaults": {
+      "title": "Politiques par défaut",
+      "description": "Règles de déploiement et d'exécution appliquées à tous les agents."
     }
   }
 }

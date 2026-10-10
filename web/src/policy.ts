@@ -256,7 +256,7 @@ export function policyRuleIssue(rule: string, resource: PolicyResource): "invali
     : undefined;
 }
 
-function matchesActionRule(pattern: string, actionId: string): boolean {
+export function matchesActionRule(pattern: string, actionId: string): boolean {
   if (pattern === "*") {
     return true;
   }

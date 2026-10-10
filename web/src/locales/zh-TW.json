@@ -43,7 +43,8 @@
     "access": "API 金鑰",
     "docs": "接入指南",
     "approvals": "核准",
-    "pact": "PACT"
+    "pact": "PACT",
+    "agents": "代理"
   },
   "shell": {
     "invalidUnlockToken": "請輸入有效的管理員權杖以解鎖控制台。",
@@ -91,6 +92,9 @@
       },
       "pact": {
         "title": "PACT"
+      },
+      "agents": {
+        "title": "代理"
       }
     },
     "navGroup": {
@@ -104,7 +108,8 @@
       "requests": "{{count}} 個請求",
       "pending": "{{count}} 個待處理",
       "tokens": "{{count}} 個權杖",
-      "configured": "{{count}} 個已設定"
+      "configured": "{{count}} 個已設定",
+      "agents": "{{count}} 個代理"
     },
     "settings": "設定",
     "settingsDescription": "管理語言、外觀、連接與執行環境。",
@@ -1098,6 +1103,80 @@
         "mode": "模式",
         "scopes": "已授權的 scope"
       }
+    }
+  },
+  "agents": {
+    "title": "代理",
+    "description": "API 代理及其權杖存取權限。",
+    "newAgent": "新增代理",
+    "advancedPolicy": "進階策略",
+    "resetFailed": "重設權杖失敗。",
+    "empty": {
+      "title": "沒有代理",
+      "description": "建立代理以使用執行時權杖連接用戶端。"
+    },
+    "missing": {
+      "title": "找不到代理",
+      "description": "此代理已不存在。"
+    },
+    "list": {
+      "name": "名稱",
+      "id": "ID",
+      "connections": "連線",
+      "actions": "操作",
+      "lastActive": "最近活躍",
+      "connectionsCount": "{{allowed}}/{{total}}",
+      "actionsCount": "{{allowed}}/{{total}}"
+    },
+    "detail": {
+      "description": "此代理的執行期權杖、登入與存取權限。"
+    },
+    "signin": {
+      "title": "登入",
+      "token": "權杖",
+      "hidden": "密碼已隱藏。",
+      "hiddenHint": "重設它以取得新權杖。",
+      "shownOnce": "此權杖僅顯示一次。請立即複製。",
+      "reset": "重設",
+      "serverUrl": "MCP 伺服器 URL",
+      "copy": "複製",
+      "config": "用戶端設定",
+      "created": "建立於 {{date}}",
+      "lastUsed": "最近使用 {{date}}"
+    },
+    "access": {
+      "title": "存取",
+      "changedCount": "{{count}} 項已變更",
+      "filterPlaceholder": "篩選操作",
+      "changedOnly": "僅已變更",
+      "default": "預設",
+      "changed": "已變更",
+      "highRisk": "高風險",
+      "blockedByPolicy": "已被預設策略封鎖",
+      "makeDefault": "設為所有代理的預設值",
+      "reset": "還原預設",
+      "defaultChanged": "已為 {{count}} 個代理變更",
+      "saveFailed": "儲存存取變更失敗。",
+      "noConnections": "尚無可用的連線。請先連接一個服務。",
+      "noMatches": "沒有符合目前篩選的操作。"
+    },
+    "activity": {
+      "title": "活動",
+      "viewAll": "檢視全部",
+      "empty": "此代理暫無請求。"
+    },
+    "reset": {
+      "title": "重設權杖？",
+      "description": "將撤銷目前權杖並以相同存取權限建立新權杖。用戶端需要更新為新權杖。",
+      "confirm": "重設權杖"
+    },
+    "revoke": {
+      "title": "撤銷此代理？",
+      "description": "權杖將立即失效。此操作無法復原。"
+    },
+    "defaults": {
+      "title": "預設策略",
+      "description": "套用於所有代理的部署與執行時規則。"
     }
   }
 }
