@@ -1073,6 +1073,11 @@ function ProviderNotFound(props: { service: string }): ReactNode {
 function ProviderDetail(props: ProviderDetailProps): ReactNode {
   const t = useTranslate();
   const navigate = useNavigate();
+  // `?welcome=1` marks a connect started inside the first-run flow: after the
+  // permission confirm, land back on the guide's done step instead of
+  // /connections.
+  const [detailSearchParams] = useSearchParams();
+  const inWelcomeFlow = detailSearchParams.get("welcome") === "1";
   const [selectedConnectionName, setSelectedConnectionName] = useState<string>();
   const [creatingConnection, setCreatingConnection] = useState(props.connections.length === 0);
   const [newConnectionName, setNewConnectionName] = useState(
@@ -1287,7 +1292,11 @@ function ProviderDetail(props: ProviderDetailProps): ReactNode {
               data={props.data}
               onRefresh={props.onRefresh}
               onDone={() =>
-                navigate(`/connections?added=${encodeURIComponent(confirmConnection.id ?? confirmConnection.service)}`)
+                navigate(
+                  inWelcomeFlow
+                    ? `/welcome?step=3&added=${encodeURIComponent(confirmConnection.id ?? confirmConnection.service)}`
+                    : `/connections?added=${encodeURIComponent(confirmConnection.id ?? confirmConnection.service)}`,
+                )
               }
               onConnectAnother={() => {
                 setConfirmConnection(undefined);

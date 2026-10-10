@@ -102,6 +102,9 @@
       },
       "connections": {
         "title": "連線"
+      },
+      "welcome": {
+        "title": "設定精靈"
       }
     },
     "navGroup": {
@@ -122,7 +125,8 @@
     "settingsDescription": "管理語言、外觀、連接與執行環境。",
     "oomolKeyDescription": "查看支援的服務與優惠，再選擇接入或管理 Key。",
     "notifications": "通知",
-    "menu": "選單"
+    "menu": "選單",
+    "setupGuide": "設定精靈"
   },
   "unlock": {
     "token": "管理員權杖",
@@ -1249,6 +1253,77 @@
       "registration": "註冊",
       "needsReauthorization": "需要重新授權",
       "identityOnly": "僅身分"
+    }
+  },
+  "welcome": {
+    "stepsLabel": "設定步驟",
+    "steps": {
+      "1": "新增代理",
+      "2": "連線服務",
+      "3": "完成"
+    },
+    "skip": "略過設定",
+    "continue": "繼續",
+    "back": "返回",
+    "agent": {
+      "title": "新增代理",
+      "existing": "已有代理 — 繼續連線服務。",
+      "description": "為 AI 代理授予連線的受限存取權限，選擇它的接入方式。",
+      "createFailed": "無法建立代理權杖。",
+      "creating": "正在建立代理權杖…",
+      "chooseAnother": "選擇其他方式",
+      "waiting": "等待代理的首次呼叫…",
+      "firstCall": "已收到首次呼叫 — 進入下一步。",
+      "mcp": {
+        "name": "MCP 用戶端",
+        "description": "Claude、Cursor 或任何支援 MCP 的用戶端 — 將 WZRD Connect 新增為自訂連接器。",
+        "title": "將 WZRD Connect 新增到你的 MCP 用戶端",
+        "lead": "MCP 代理透過此連接器運作，使用自己的權杖登入。",
+        "serverUrl": "伺服器位址",
+        "copyUrl": "複製伺服器位址",
+        "config": "用戶端設定",
+        "copyConfig": "複製用戶端設定",
+        "steps": {
+          "add": "在 MCP 用戶端中選擇新增自訂連接器。",
+          "paste": "貼上伺服器位址，或將設定片段寫入用戶端設定檔。",
+          "call": "用戶端使用權杖呼叫 WZRD Connect — 首次呼叫會自動推進本精靈。"
+        }
+      },
+      "token": {
+        "name": "API 權杖",
+        "description": "為你自己的用戶端、腳本或工具建立執行時期權杖 — 呼叫按權杖記錄。",
+        "title": "你的代理權杖",
+        "lead": "在 /v1 呼叫中作為 Bearer 憑證發送，或寫入用戶端設定。",
+        "secret": "權杖",
+        "shownOnce": "僅顯示一次 — 請立即複製並妥善保存。"
+      },
+      "pact": {
+        "name": "PACT 委派",
+        "description": "透過裝置流程連結向 PACT Brand 委派受限存取。",
+        "title": "PACT 委派",
+        "lead": "PACT 頁面簽發 Brand 用於委派存取的裝置流程連結。",
+        "hint": "身分、註冊與 Brand 連線都在 PACT 頁面管理 — 裝置流程授權也在那裡完成。",
+        "open": "開啟 PACT 頁面"
+      }
+    },
+    "service": {
+      "title": "連線服務",
+      "description": "從目錄中新增帳號 — 連線流程以權限確認結束。",
+      "connected": "已連線 {{count}} 個",
+      "browseAll": "瀏覽完整服務目錄",
+      "skip": "暫時略過",
+      "finish": "完成"
+    },
+    "done": {
+      "title": "設定完成",
+      "description": "WZRD Connect 託管你的服務並為代理授予受限存取 — 一切盡在活動記錄。",
+      "agentReady": "代理已就緒",
+      "agentSkipped": "還沒有代理 — 可隨時在代理頁面新增。",
+      "connectionsReady": "已連線 {{count}} 個服務",
+      "connectionsSkipped": "還沒有服務 — 可隨時從服務商頁面連線。",
+      "openOverview": "開啟總覽",
+      "connectAnother": "再連線一個服務",
+      "setAccess": "設定代理權限"
     }
   }
 }
