@@ -18,6 +18,8 @@ export interface RuntimeTokenRecord {
   lastUsedAt?: string;
   /** Opaque PACT `sub` for PA-JWTs minted for this token's calls. */
   subject: string;
+  /** Console user attributed as the token's creator; unset writes NULL (multi-tenant seam). */
+  createdByUserId?: string;
 }
 
 export interface RuntimeTokenSummary {
@@ -34,6 +36,10 @@ export interface RuntimeTokenSummary {
   lastUsedAt?: string;
   /** Opaque PACT `sub` identifying the agent behind this token. */
   subject: string;
+}
+
+export interface RuntimeTokenCreateOptions {
+  createdByUserId?: string;
 }
 
 export interface RuntimeTokenCreation {
@@ -76,6 +82,7 @@ export class RuntimeTokenService {
       allowedProxies: [],
       allowedConnections: [],
     },
+    options?: RuntimeTokenCreateOptions,
   ): Promise<RuntimeTokenCreation> {
     const token = `${tokenPrefix}${randomBytes(32).toString("base64url")}`;
     const now = new Date().toISOString();
@@ -92,6 +99,7 @@ export class RuntimeTokenService {
       approvalRequiredActions: policy.approvalRequiredActions,
       createdAt: now,
       subject: randomRuntimeTokenSubject(),
+      createdByUserId: options?.createdByUserId,
     };
     await this.store.add(record);
     return { token, record };

@@ -26,6 +26,7 @@ import { PlainTextSecretCodec } from "../../secrets/secret-codec-core.ts";
 import { ApprovalStore } from "../approval-store.ts";
 import { ConnectionRequestStore } from "../connection-request-store.ts";
 import { SqlConnectionStore } from "../connection-store.ts";
+import { ConsoleUserStore } from "../console-user-store.ts";
 import { PactIdentityStore } from "../pact-identity-store.ts";
 import { PactRegistrationStore } from "../pact-registration-store.ts";
 import {
@@ -63,6 +64,7 @@ export class D1RuntimeDatabase implements RuntimeDatabase {
   readonly approvalStore: ApprovalStore;
   readonly pactIdentityStore: PactIdentityStore;
   readonly pactRegistrationStore: PactRegistrationStore;
+  readonly consoleUserStore: ConsoleUserStore;
 
   constructor(database: D1DatabaseBinding, options: D1RuntimeDatabaseOptions = {}) {
     const secretCodec = options.secretCodec ?? new PlainTextSecretCodec();
@@ -77,6 +79,7 @@ export class D1RuntimeDatabase implements RuntimeDatabase {
     this.approvalStore = new ApprovalStore(transaction, secretCodec);
     this.pactIdentityStore = new PactIdentityStore(transaction, secretCodec);
     this.pactRegistrationStore = new PactRegistrationStore(transaction);
+    this.consoleUserStore = new ConsoleUserStore(transaction);
     this.oauthClientConfigStore = new D1OAuthClientConfigStore(database, secretCodec);
     this.oauthStateStore = new D1OAuthStateStore(database, secretCodec);
     this.runtimeTokenStore = new D1RuntimeTokenStore(database);
@@ -223,9 +226,9 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
       .prepare(
         `
         insert into runtime_tokens (
-          ${runtimeTokenColumns}
+          ${runtimeTokenColumns}, created_by_user_id
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
       .bind(
@@ -242,6 +245,7 @@ export class D1RuntimeTokenStore implements IRuntimeTokenStore {
         record.createdAt,
         record.lastUsedAt ?? null,
         record.subject,
+        record.createdByUserId ?? null,
       )
       .run();
   }

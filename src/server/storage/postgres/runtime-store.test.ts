@@ -110,6 +110,7 @@ describe("PostgreSQL migrations with PGlite", () => {
           { name: "0021_pact_connections.sql" },
           { name: "0022_pact_requests.sql" },
           { name: "0023_run_receipts.sql" },
+          { name: "0024_console_users.sql" },
         ],
       });
 
@@ -179,6 +180,7 @@ describe("PostgreSQL migrations with a custom migration source", () => {
           { name: "0021_pact_connections.sql" },
           { name: "0022_pact_requests.sql" },
           { name: "0023_run_receipts.sql" },
+          { name: "0024_console_users.sql" },
           { name: "9998_custom.sql" },
         ],
       });

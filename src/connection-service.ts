@@ -65,6 +65,12 @@ export interface ManagedConnectionSummary extends ConnectionSummary {
   comment: string | null;
 }
 
+/** Extra attributes a `store.set` insert writes onto the new `connections` row. */
+export interface ConnectionSetOptions {
+  /** Console user attributed as the row's creator (multi-tenant seam); unset writes NULL. */
+  createdByUserId?: string;
+}
+
 /** Request body for local credential connections. */
 export interface ConnectWithCredentialInput {
   connectionName?: string;
@@ -72,6 +78,8 @@ export interface ConnectWithCredentialInput {
   signal?: AbortSignal;
   expectedConnection?: StoredConnection;
   comment?: string | null;
+  /** Console user behind the request, recorded as `created_by_user_id` on a new row. */
+  createdByUserId?: string;
 }
 
 export interface ConnectWithoutAuthInput {
@@ -186,7 +194,12 @@ interface PactExecutionConnection {
  */
 export interface IConnectionStore {
   get(service: string, connectionName: string): Promise<StoredConnection | undefined>;
-  set(service: string, connectionName: string, credential: ResolvedCredential): Promise<StoredLocalConnection>;
+  set(
+    service: string,
+    connectionName: string,
+    credential: ResolvedCredential,
+    options?: ConnectionSetOptions,
+  ): Promise<StoredLocalConnection>;
   setPactConnection(connectionName: string, credential: PactConnectionCredential): Promise<StoredPactConnection>;
   updateCredential(input: StoredLocalConnection | StoredPactConnection, refresh?: boolean): Promise<boolean>;
   delete(service: string, connectionName: string): Promise<void>;
@@ -626,7 +639,9 @@ export class ConnectionService {
     this.assertNotCancelled(input.signal);
     const stored = expected
       ? await this.replaceCredential(expected, credential)
-      : await this.store.set(provider.service, normalizeConnectionName(input.connectionName), credential);
+      : await this.store.set(provider.service, normalizeConnectionName(input.connectionName), credential, {
+          createdByUserId: input.createdByUserId,
+        });
     return this.createStoredConnectionSummary(provider, stored.id, stored.connectionName, credential);
   }
 

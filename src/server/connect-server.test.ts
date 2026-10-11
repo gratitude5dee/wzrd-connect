@@ -1662,6 +1662,7 @@ describe("ConnectServer", () => {
     await expect(bearer.json()).resolves.toEqual({
       adminAuthConfigured: true,
       authenticated: true,
+      kind: "admin",
     });
 
     const lowercaseBearer = await app.request("/api/auth/session", {
@@ -1673,6 +1674,7 @@ describe("ConnectServer", () => {
     await expect(lowercaseBearer.json()).resolves.toEqual({
       adminAuthConfigured: true,
       authenticated: true,
+      kind: "admin",
     });
 
     const authorized = await app.request("/api/providers", {
@@ -1686,6 +1688,7 @@ describe("ConnectServer", () => {
     await expect(cookieSession.json()).resolves.toEqual({
       adminAuthConfigured: true,
       authenticated: true,
+      kind: "admin",
     });
   });
 

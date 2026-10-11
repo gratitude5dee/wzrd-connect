@@ -5,6 +5,7 @@ import type { IOAuthStateStore } from "../../oauth/oauth-flow-service.ts";
 import type { TriggerStore } from "../../triggers/store.ts";
 import type { ApprovalStore } from "./approval-store.ts";
 import type { ConnectionRequestStore } from "./connection-request-store.ts";
+import type { ConsoleUserStore } from "./console-user-store.ts";
 import type { IIdempotencyStore } from "./idempotency-store.ts";
 import type { PactIdentityStore } from "./pact-identity-store.ts";
 import type { PactRegistrationStore } from "./pact-registration-store.ts";
@@ -28,4 +29,5 @@ export interface RuntimeDatabase {
   approvalStore: ApprovalStore;
   pactIdentityStore: PactIdentityStore;
   pactRegistrationStore: PactRegistrationStore;
+  consoleUserStore: ConsoleUserStore;
 }

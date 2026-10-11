@@ -31,6 +31,7 @@ import { ApprovalMaintenance } from "./approvals/approval-maintenance.ts";
 import { ApprovalService } from "./approvals/approval-service.ts";
 import { ConnectServer } from "./connect-server.ts";
 import { RuntimeTokenService } from "./storage/runtime-token-service.ts";
+import { ThirdwebClient } from "./thirdweb/client.ts";
 
 export interface ConnectAppOptions {
   catalog: CatalogStore;
@@ -51,6 +52,8 @@ export interface ConnectAppOptions {
   approvalTtlSeconds?: number;
   /** PACT identity/registration wiring; `enabled` mounts every PACT route. */
   pact?: ConnectPactOptions;
+  /** Console user sign-in wiring (spec §3): session cookie key + thirdweb + allowlist. */
+  consoleAuth?: ConnectConsoleAuthOptions;
   registerStaticRoutes?: (app: Hono) => void;
   logger?: RuntimeLogger;
   computeRuntimeAuthConfigured?: boolean;
@@ -71,6 +74,15 @@ export interface ConnectPactOptions {
   allowInsecureLoopback?: boolean;
   /** `OOMOL_CONNECT_PACT_STRICT_RECEIPTS` — 502 pact_receipt_invalid on unverified Brand receipts. */
   strictReceipts?: boolean;
+}
+
+export interface ConnectConsoleAuthOptions {
+  /** `OOMOL_CONNECT_ENCRYPTION_KEY` — signs `oomol_connect_user_session`; user auth stays off without it. */
+  signingKey?: string;
+  /** `THIRDWEB_SECRET_KEY` — enables the thirdweb OTP endpoints. */
+  thirdwebSecretKey?: string;
+  /** `OOMOL_CONNECT_AUTH_ALLOWLIST` — comma-separated identities; unset opens sign-up. */
+  allowlist?: string;
 }
 
 export interface ConnectApp {
@@ -240,6 +252,20 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
         resolveRuntimeToken: (token) => runtimeTokens.resolveToken(token),
         verifyRuntimeJwt: options.verifyRuntimeJwt,
         recordDeniedAttempt: (attempt) => actions.recordDeniedRequest(attempt),
+        userSession: {
+          signingKey: options.consoleAuth?.signingKey,
+          store: options.runtimeDatabase.consoleUserStore,
+        },
+      },
+      thirdwebAuth: {
+        client: options.consoleAuth?.thirdwebSecretKey
+          ? new ThirdwebClient({ secretKey: options.consoleAuth.thirdwebSecretKey })
+          : undefined,
+        userSession: {
+          signingKey: options.consoleAuth?.signingKey,
+          store: options.runtimeDatabase.consoleUserStore,
+        },
+        allowlist: options.consoleAuth?.allowlist,
       },
       actionPolicy: options.actionPolicy,
       logger: options.logger,

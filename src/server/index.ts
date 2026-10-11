@@ -86,6 +86,10 @@ async function main(): Promise<void> {
       trustedHosts: parseEgressTrustedHosts(process.env.OOMOL_CONNECT_EGRESS_TRUSTED_HOSTS),
     },
     approvalTtlSeconds,
+    consoleAuth: {
+      thirdwebSecretKey: optionalEnv("THIRDWEB_SECRET_KEY"),
+      allowlist: optionalEnv("OOMOL_CONNECT_AUTH_ALLOWLIST"),
+    },
     pact: {
       enabled: pactEnabled,
       keyGraceSeconds: pactKeyGraceSeconds,

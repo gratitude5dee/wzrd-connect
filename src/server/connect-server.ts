@@ -18,6 +18,7 @@ import type { TriggerMaintenance } from "../triggers/maintenance.ts";
 import type { TriggerRunner } from "../triggers/trigger-runner.ts";
 import type { LocalAuthOptions, RuntimeCallerKind } from "./api/auth.ts";
 import type { RuntimeActionHttpResult, RuntimeStatus } from "./api/runtime-api.ts";
+import type { ThirdwebAuthRouteOptions } from "./api/thirdweb-auth.ts";
 import type { ApprovalGate, ApprovalGateRequest } from "./approvals/approval-gate.ts";
 import type { ApprovalService, CreateGrantInput } from "./approvals/approval-service.ts";
 import type { ITransitFileService } from "./files/transit-file-store.ts";
@@ -70,9 +71,11 @@ import {
   clearLocalAuthCookie,
   createLocalAuthMiddleware,
   hasAdminBearer,
+  readConsoleUser,
   readLocalAuthSession,
   readRuntimeCallerKind,
   readRuntimeGrant,
+  revokeUserAuthSession,
 } from "./api/auth.ts";
 import { getResponseCachePolicy } from "./api/cache-policy.ts";
 import { createConnectionRoutes } from "./api/connection-routes.ts";
@@ -96,6 +99,7 @@ import {
   writeRuntimeSuccess,
 } from "./api/runtime-api.ts";
 import { renderSaasCompletionPage } from "./api/saas-completion-page.ts";
+import { createThirdwebAuthRoutes } from "./api/thirdweb-auth.ts";
 import { ApprovalRequestError, approvalPollIntervalSeconds } from "./approvals/approval-service.ts";
 import { TransitFileError } from "./files/transit-file-store.ts";
 import { ProxyRunner } from "./proxy/proxy-runner.ts";
@@ -162,6 +166,8 @@ export interface IConnectServerOptions {
   pact?: PactServerOptions;
   uploadTransitFile?: (request: Request) => Promise<TransitFileUpload>;
   auth?: LocalAuthOptions;
+  /** thirdweb console sign-in routes; absent only in bespoke wiring (prod always passes it). */
+  thirdwebAuth?: ThirdwebAuthRouteOptions;
   actionPolicy?: ActionPolicyService;
   runtimePolicyStore: IRuntimePolicyStore;
   actionSearch?: ActionSearchIndexProvider;
@@ -343,10 +349,14 @@ export class ConnectServer {
     );
     app.get("/api/actions/:actionId", (context) => this.getAction(context, context.req.param("actionId")));
     app.get("/api/auth/session", async (context) => context.json(await readLocalAuthSession(context, auth)));
-    app.post("/api/auth/logout", (context) => {
+    app.post("/api/auth/logout", async (context) => {
       clearLocalAuthCookie(context);
+      await revokeUserAuthSession(context, auth);
       return context.json({ ok: true });
     });
+    if (this.options.thirdwebAuth) {
+      app.route("/api/auth/thirdweb", createThirdwebAuthRoutes(this.options.thirdwebAuth));
+    }
 
     app.get("/api/connections", (context) => this.listConnections(context));
     app.put("/api/connections/:service", (context) => this.upsertConnection(context, context.req.param("service")));
@@ -1861,6 +1871,7 @@ export class ConnectServer {
           values,
           connectionName,
           signal: context.req.raw.signal,
+          createdByUserId: readConsoleUser(context)?.id,
         }),
         logContext,
       );
@@ -1873,6 +1884,7 @@ export class ConnectServer {
           values,
           connectionName,
           signal: context.req.raw.signal,
+          createdByUserId: readConsoleUser(context)?.id,
         }),
         logContext,
       );
@@ -1972,7 +1984,9 @@ export class ConnectServer {
       return jsonError(context, 400, "invalid_input", "name is required.");
     }
 
-    const created = await this.options.runtimeTokens.createToken(name, readTokenPolicy(body, true));
+    const created = await this.options.runtimeTokens.createToken(name, readTokenPolicy(body, true), {
+      createdByUserId: readConsoleUser(context)?.id,
+    });
     return context.json({
       token: created.token,
       record: summarizeRuntimeToken(created.record),

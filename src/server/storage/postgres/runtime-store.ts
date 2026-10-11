@@ -30,6 +30,7 @@ import { PlainTextSecretCodec } from "../../secrets/secret-codec-core.ts";
 import { ApprovalStore } from "../approval-store.ts";
 import { ConnectionRequestStore } from "../connection-request-store.ts";
 import { SqlConnectionStore } from "../connection-store.ts";
+import { ConsoleUserStore } from "../console-user-store.ts";
 import { PactIdentityStore } from "../pact-identity-store.ts";
 import { PactRegistrationStore } from "../pact-registration-store.ts";
 import {
@@ -70,6 +71,7 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
   readonly approvalStore: ApprovalStore;
   readonly pactIdentityStore: PactIdentityStore;
   readonly pactRegistrationStore: PactRegistrationStore;
+  readonly consoleUserStore: ConsoleUserStore;
 
   private readonly pool: Pool;
   private readonly secretCodec: ISecretCodec;
@@ -102,6 +104,7 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
     this.approvalStore = new ApprovalStore(transaction, this.secretCodec);
     this.pactIdentityStore = new PactIdentityStore(transaction, this.secretCodec);
     this.pactRegistrationStore = new PactRegistrationStore(transaction);
+    this.consoleUserStore = new ConsoleUserStore(transaction);
     this.oauthClientConfigStore = new PostgresOAuthClientConfigStore(pool, this.secretCodec);
     this.oauthStateStore = new PostgresOAuthStateStore(pool, this.secretCodec);
     this.runtimeTokenStore = new PostgresRuntimeTokenStore(pool);
@@ -156,6 +159,8 @@ export class PostgresRuntimeDatabase implements RuntimeDatabase {
         delete from idempotency_records;
         delete from approval_grants;
         delete from approvals;
+        delete from console_sessions;
+        delete from console_users;
         delete from marketplace_config;
         delete from provider_preferences;
       `);
@@ -422,9 +427,9 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
     await this.pool.query(
       `
         insert into runtime_tokens (
-          ${runtimeTokenColumns}
+          ${runtimeTokenColumns}, created_by_user_id
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       `,
       [
         record.id,
@@ -440,6 +445,7 @@ class PostgresRuntimeTokenStore implements IRuntimeTokenStore {
         record.createdAt,
         record.lastUsedAt ?? null,
         record.subject,
+        record.createdByUserId ?? null,
       ],
     );
   }

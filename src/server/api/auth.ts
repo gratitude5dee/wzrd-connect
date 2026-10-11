@@ -1,3 +1,4 @@
+import type { ConsoleUser, ConsoleUserStore } from "../storage/console-user-store.ts";
 import type { RuntimeGrant } from "../storage/runtime-token-service.ts";
 import type { RuntimeJwtVerifier } from "./runtime-jwt.ts";
 import type { Context, MiddlewareHandler } from "hono";
@@ -9,6 +10,7 @@ import { writeRuntimeFailure } from "./runtime-api.ts";
 
 const bearerScheme = "bearer";
 const authCookieName = "oomol_connect_admin_session";
+const userAuthCookieName = "oomol_connect_user_session";
 const authCookieVersion = "v1";
 const authCookieMaxAgeSeconds = 2_592_000;
 const authCookieMaxAgeMs = authCookieMaxAgeSeconds * 1000;
@@ -27,6 +29,18 @@ export interface LocalAuthOptions {
    * the run log the activity feed renders — PAP's red "tried to" rows.
    */
   recordDeniedAttempt?(attempt: DeniedRequestAttempt): void | Promise<void>;
+  /**
+   * Console user sign-in (thirdweb OTP): verifies `oomol_connect_user_session`
+   * cookies against live `console_sessions` rows. Missing pieces disable user auth.
+   */
+  userSession?: LocalUserSessionOptions;
+}
+
+/** Server-side console user session wiring: the cookie signing key plus the session store. */
+export interface LocalUserSessionOptions {
+  /** `OOMOL_CONNECT_ENCRYPTION_KEY` — the HMAC key behind `oomol_connect_user_session`. */
+  signingKey?: string;
+  store?: ConsoleUserStore;
 }
 
 /** One request the auth middleware refused before it could reach a handler. */
@@ -40,9 +54,21 @@ export interface DeniedRequestAttempt {
   runtimeTokenId?: string;
 }
 
+/** The console identity a user-session request authenticates as. */
+export interface LocalAuthSessionUser {
+  id: string;
+  walletAddress: string;
+  phone?: string;
+  email?: string;
+}
+
 export interface LocalAuthSession {
   adminAuthConfigured: boolean;
   authenticated: boolean;
+  /** Which credential authenticated this request; absent when none did. */
+  kind?: "user" | "admin";
+  /** Console user behind a live `oomol_connect_user_session` cookie, when present. */
+  user?: LocalAuthSessionUser;
 }
 
 type AuthScope = "admin" | "runtime";
@@ -62,13 +88,20 @@ export function readRuntimeGrant(context: Context): RuntimeGrant | undefined {
 /**
  * Bearer credential kind recorded by the auth middleware for the §4.6 receipt
  * `act` claim: `bootstrap` (configured runtime token), `jwt` (verified runtime
- * JWT), `admin` (admin token or admin session cookie), `dev` (no credential).
- * Stored-token callers are read back through {@link readRuntimeGrant} instead —
- * their `act` is the token id.
+ * JWT), `admin` (admin token or admin session cookie), `user` (console user
+ * session cookie), `dev` (no credential). Stored-token callers are read back
+ * through {@link readRuntimeGrant} instead — their `act` is the token id.
  */
-export type RuntimeCallerKind = "bootstrap" | "jwt" | "dev" | "admin";
+export type RuntimeCallerKind = "bootstrap" | "jwt" | "dev" | "admin" | "user";
 
 const callerKinds = new WeakMap<Request, RuntimeCallerKind>();
+
+const consoleUsers = new WeakMap<Request, ConsoleUser>();
+
+/** Console user that authenticated this request through `oomol_connect_user_session`, when any. */
+export function readConsoleUser(context: Context): ConsoleUser | undefined {
+  return consoleUsers.get(context.req.raw);
+}
 
 /** Credential kind for the current request; `dev` when no bearer was presented. */
 export function readRuntimeCallerKind(context: Context): RuntimeCallerKind {
@@ -220,6 +253,7 @@ function isPublicPath(path: string, method: string): boolean {
     (method === "GET" && (path === "/.well-known/jwks.json" || path === "/.well-known/openid-configuration")) ||
     (method === "GET" && path === "/api/auth/session") ||
     (method === "POST" && path === "/api/auth/logout") ||
+    (method === "POST" && (path === "/api/auth/thirdweb/initiate" || path === "/api/auth/thirdweb/complete")) ||
     (method === "GET" && path.startsWith("/api/files/")) ||
     isConsoleShellRequest(path, method)
   );
@@ -227,8 +261,12 @@ function isPublicPath(path: string, method: string): boolean {
 
 export async function readLocalAuthSession(context: Context, options: LocalAuthOptions): Promise<LocalAuthSession> {
   const adminToken = normalizeToken(options.adminToken);
+  const user = await readUserSession(context, options);
+  const sessionUser: LocalAuthSessionUser | undefined = user
+    ? { id: user.id, walletAddress: user.walletAddress, phone: user.phone, email: user.email }
+    : undefined;
   if (!adminToken) {
-    return { adminAuthConfigured: false, authenticated: true };
+    return { adminAuthConfigured: false, authenticated: true, kind: user ? "user" : undefined, user: sessionUser };
   }
 
   const authenticated = await hasRequestToken(context, adminToken);
@@ -238,7 +276,9 @@ export async function readLocalAuthSession(context: Context, options: LocalAuthO
 
   return {
     adminAuthConfigured: true,
-    authenticated,
+    authenticated: authenticated || user !== undefined,
+    kind: authenticated ? "admin" : user ? "user" : undefined,
+    user: sessionUser,
   };
 }
 
@@ -249,6 +289,48 @@ export function clearLocalAuthCookie(context: Context): void {
     secure: context.req.url.startsWith("https://"),
     path: "/",
   });
+}
+
+/** Set `oomol_connect_user_session` for a freshly inserted `console_sessions` row (§3.2). */
+export async function installUserAuthCookie(context: Context, signingKey: string, sessionId: string): Promise<void> {
+  setCookie(context, userAuthCookieName, await createUserAuthCookieValue(signingKey, sessionId), {
+    httpOnly: true,
+    maxAge: authCookieMaxAgeSeconds,
+    sameSite: "Strict",
+    secure: context.req.url.startsWith("https://"),
+    path: "/",
+  });
+}
+
+export function clearUserAuthCookie(context: Context): void {
+  deleteCookie(context, userAuthCookieName, {
+    httpOnly: true,
+    sameSite: "Strict",
+    secure: context.req.url.startsWith("https://"),
+    path: "/",
+  });
+}
+
+/** Revoke the live session behind the user cookie and clear it; the admin cookie is untouched. */
+export async function revokeUserAuthSession(context: Context, options: LocalAuthOptions): Promise<void> {
+  const signingKey = normalizeToken(options.userSession?.signingKey);
+  const store = options.userSession?.store;
+  if (signingKey && store) {
+    const sid = await readUserCookieSid(context, signingKey);
+    if (sid) {
+      await store.revokeSession(sid, new Date().toISOString());
+    }
+  }
+  clearUserAuthCookie(context);
+}
+
+/**
+ * Signed user-cookie payload `v1.<issuedAt>.<sid>.<nonce>.<sig>` — the same HMAC-SHA256
+ * scheme as the admin cookie, keyed on `OOMOL_CONNECT_ENCRYPTION_KEY` instead of the admin token.
+ */
+export async function createUserAuthCookieValue(signingKey: string, sessionId: string): Promise<string> {
+  const payload = `${authCookieVersion}.${Date.now()}.${sessionId}.${base64Url(crypto.getRandomValues(new Uint8Array(16)))}`;
+  return `${payload}.${await signAuthCookiePayload(payload, signingKey)}`;
 }
 
 async function installAdminCookieForBearer(context: Context, options: LocalAuthOptions): Promise<void> {
@@ -280,7 +362,73 @@ async function hasValidToken(context: Context, options: LocalAuthOptions, scope:
     return true;
   }
 
-  return scope === "runtime" ? await hasValidRuntimeToken(context, options) : false;
+  return scope === "runtime"
+    ? await hasValidRuntimeToken(context, options)
+    : await hasValidUserSession(context, options);
+}
+
+/** Admin-scope fallback: a live console user session cookie authenticates as `kind: "user"`. */
+async function hasValidUserSession(context: Context, options: LocalAuthOptions): Promise<boolean> {
+  if (!(await readUserSession(context, options))) {
+    return false;
+  }
+  recordCallerKind(context, "user");
+  return true;
+}
+
+/**
+ * Resolve the console user behind `oomol_connect_user_session`: signature valid,
+ * unexpired (30d), live `console_sessions` row, and the user not disabled. Records
+ * the user for `created_by` attribution and touches `last_seen_at` on success.
+ */
+async function readUserSession(context: Context, options: LocalAuthOptions): Promise<ConsoleUser | undefined> {
+  const signingKey = normalizeToken(options.userSession?.signingKey);
+  const store = options.userSession?.store;
+  if (!signingKey || !store) {
+    return undefined;
+  }
+
+  const sessionId = await readUserCookieSid(context, signingKey);
+  if (!sessionId) {
+    return undefined;
+  }
+  const session = await store.getLiveSession(sessionId);
+  if (!session) {
+    return undefined;
+  }
+  const user = await store.get(session.userId);
+  if (!user || user.disabledAt) {
+    return undefined;
+  }
+
+  consoleUsers.set(context.req.raw, user);
+  try {
+    await store.touchSession(session.id, new Date().toISOString());
+  } catch {
+    // Activity bookkeeping must never change the auth decision.
+  }
+  return user;
+}
+
+/** Verify the signed user cookie and return the embedded session id, or undefined when invalid. */
+async function readUserCookieSid(context: Context, signingKey: string): Promise<string | undefined> {
+  const cookie = getCookie(context, userAuthCookieName);
+  if (!cookie) {
+    return undefined;
+  }
+
+  const [version, issuedAt, sessionId, nonce, signature, ...extra] = cookie.split(".");
+  if (version !== authCookieVersion || !issuedAt || !sessionId || !nonce || !signature || extra.length > 0) {
+    return undefined;
+  }
+
+  const issuedAtMs = Number(issuedAt);
+  if (!Number.isFinite(issuedAtMs) || issuedAtMs > Date.now() || Date.now() - issuedAtMs > authCookieMaxAgeMs) {
+    return undefined;
+  }
+
+  const payload = `${version}.${issuedAt}.${sessionId}.${nonce}`;
+  return constantTimeEqual(signature, await signAuthCookiePayload(payload, signingKey)) ? sessionId : undefined;
 }
 
 async function hasRequestToken(context: Context, token: string): Promise<boolean> {
