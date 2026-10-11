@@ -1371,6 +1371,23 @@
   },
   "landing": {
     "connectNow": "立即连接",
-    "stubPitch": "为您的智能体提供受控访问——连接服务、设置权限、查看每次调用。"
+    "title": "连接您的服务，为您的智能体授予受限访问权限。",
+    "subtitle": "WZRD Connect 保管凭据、限制每项操作并记录每次调用——您的智能体只能获得您允许的能力。",
+    "viewDocs": "查看文档",
+    "values": {
+      "connect": {
+        "title": "连接",
+        "description": "目录中 1,500+ 项服务——数分钟即可完成 OAuth 和 API 密钥连接。"
+      },
+      "scope": {
+        "title": "限定范围",
+        "description": "按智能体设置操作白名单、审批策略和高风险操作门控。"
+      },
+      "audit": {
+        "title": "审计",
+        "description": "统一的活动记录，涵盖每次运行、审批和拒绝。"
+      }
+    },
+    "footer": "由 PACT 托管提供支持"
   }
 }

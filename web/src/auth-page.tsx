@@ -5,7 +5,7 @@ import type { ReactNode, SubmitEvent } from "react";
 import { useTranslate } from "@embra/i18n/react";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { apiPost } from "./api";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
 import {
@@ -374,34 +374,6 @@ export function AuthPendingPage(props: { theme: ThemeMode; onThemeChange(theme: 
         <Button variant="outline" onClick={signOut} disabled={signingOut}>
           {signingOut ? <Loader2 className="spin" size={15} aria-hidden="true" /> : null}
           {t("auth.pending.signOut")}
-        </Button>
-      </section>
-    </main>
-  );
-}
-
-/**
- * `/` — placeholder landing stub. PR C replaces this with the real landing
- * page; keep it a single obvious seam.
- */
-export function LandingStub(props: { theme: ThemeMode; onThemeChange(theme: ThemeMode): void }): ReactNode {
-  const t = useTranslate();
-
-  return (
-    <main className="unlock-screen">
-      <section className="unlock-panel auth-panel">
-        <div className="brand">
-          <img className="brand-mark" src={oomolConnectLogoUrl} alt="" />
-          <div>
-            <div className="brand-name">WZRD Connect</div>
-            <div className="brand-subtitle">{t("brand.subtitle")}</div>
-          </div>
-        </div>
-        <LanguageSelect />
-        <ThemeControl theme={props.theme} onThemeChange={props.onThemeChange} />
-        <p className="muted-copy">{t("landing.stubPitch")}</p>
-        <Button asChild>
-          <Link to="/auth">{t("landing.connectNow")}</Link>
         </Button>
       </section>
     </main>
