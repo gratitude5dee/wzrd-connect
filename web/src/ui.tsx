@@ -488,7 +488,10 @@ function AppShell(props: {
     props.data.runtimeTokens.length === 0 &&
     !props.data.connections.some((connection) => connection.id != null && isUsableCredentialConnection(connection));
   const firstRunWelcome =
-    installEmpty && !readWelcomeDismissed() && (location.pathname === "/" || location.pathname === "/overview");
+    !props.loading &&
+    installEmpty &&
+    !readWelcomeDismissed() &&
+    (location.pathname === "/" || location.pathname === "/overview");
 
   useEffect(() => {
     setMobileNavOpen(false);
