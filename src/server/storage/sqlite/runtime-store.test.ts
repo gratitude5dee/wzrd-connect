@@ -66,6 +66,7 @@ describe("SqliteRuntimeDatabase", () => {
       "0021_pact_connections.sql",
       "0022_pact_requests.sql",
       "0023_run_receipts.sql",
+      "0024_console_users.sql",
     ];
     expect(entries.filter((entry) => entry.message === "sqlite migration started")).toEqual(
       migrations.map((migration) => ({ fields: { migration }, message: "sqlite migration started" })),

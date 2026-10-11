@@ -89,6 +89,8 @@ export interface ConnectorRuntimeOptions {
   approvalTtlSeconds?: number;
   /** PACT (agent-side delegation identity). Disabled unless `enabled` is true. */
   pact?: ConnectorPactOptions;
+  /** Console user sign-in: thirdweb OTP secret + optional allowlist; `encryptionKey` signs the session cookie. */
+  consoleAuth?: ConnectorConsoleAuthOptions;
   /** Services, or `*`, whose connections may carry their own OAuth client instead of the configured one. */
   allowedCustomOAuth?: string[];
   transitFiles?: ConnectorTransitFileOptions;
@@ -104,6 +106,14 @@ export interface ConnectorRuntimeOptions {
   logger?: RuntimeLogger;
   /** The standalone host opts into API-reference HTML. Authorization completion pages are always available. */
   apiReference?: boolean;
+}
+
+/** Console user sign-in flags parsed by the host (spec §3). */
+export interface ConnectorConsoleAuthOptions {
+  /** `THIRDWEB_SECRET_KEY` — enables the `/api/auth/thirdweb/*` endpoints. */
+  thirdwebSecretKey?: string;
+  /** `OOMOL_CONNECT_AUTH_ALLOWLIST` — comma-separated E.164 phones/emails/wallets; unset opens sign-up. */
+  allowlist?: string;
 }
 
 /** PACT deployment flags parsed by the host. */
@@ -242,6 +252,11 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
         actionPolicy: new ActionPolicyService(options.actionPolicy),
         approvalTtlSeconds: options.approvalTtlSeconds,
         pact: options.pact,
+        consoleAuth: {
+          signingKey: options.encryptionKey,
+          thirdwebSecretKey: options.consoleAuth?.thirdwebSecretKey,
+          allowlist: options.consoleAuth?.allowlist,
+        },
         allowedCustomOAuth: options.allowedCustomOAuth,
         logger: options.logger,
         serveDocumentation: options.apiReference ?? false,

@@ -25,7 +25,7 @@ export function readString(row: RuntimeRow, key: string): string {
 }
 
 /** Read a nullable string column, treating both SQL null and a missing column as absent. */
-function readOptionalString(row: RuntimeRow, key: string): string | undefined {
+export function readOptionalString(row: RuntimeRow, key: string): string | undefined {
   return row[key] == null ? undefined : readString(row, key);
 }
 

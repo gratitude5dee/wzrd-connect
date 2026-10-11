@@ -28,6 +28,7 @@ import { PlainTextSecretCodec } from "../../secrets/secret-codec-core.ts";
 import { ApprovalStore } from "../approval-store.ts";
 import { ConnectionRequestStore } from "../connection-request-store.ts";
 import { SqlConnectionStore } from "../connection-store.ts";
+import { ConsoleUserStore } from "../console-user-store.ts";
 import { defaultMigrationSource } from "../migration-source.ts";
 import { PactIdentityStore } from "../pact-identity-store.ts";
 import { PactRegistrationStore } from "../pact-registration-store.ts";
@@ -103,6 +104,7 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
   readonly approvalStore: ApprovalStore;
   readonly pactIdentityStore: PactIdentityStore;
   readonly pactRegistrationStore: PactRegistrationStore;
+  readonly consoleUserStore: ConsoleUserStore;
 
   private readonly database: DatabaseSync;
   private readonly secretCodec: ISecretCodec;
@@ -122,6 +124,7 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
     this.approvalStore = new ApprovalStore(transaction, this.secretCodec);
     this.pactIdentityStore = new PactIdentityStore(transaction, this.secretCodec);
     this.pactRegistrationStore = new PactRegistrationStore(transaction);
+    this.consoleUserStore = new ConsoleUserStore(transaction);
     this.oauthClientConfigStore = new SqliteOAuthClientConfigStore(this.database, this.secretCodec);
     this.oauthStateStore = new SqliteOAuthStateStore(this.database, this.secretCodec);
     this.runtimeTokenStore = new SqliteRuntimeTokenStore(this.database);
@@ -276,6 +279,8 @@ export class SqliteRuntimeDatabase implements RuntimeDatabase {
       delete from idempotency_records;
       delete from approval_grants;
       delete from approvals;
+      delete from console_sessions;
+      delete from console_users;
       delete from pact_registrations;
       delete from pact_identity;
       delete from marketplace_config;
@@ -423,9 +428,9 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
       .prepare(
         `
         insert into runtime_tokens (
-          ${runtimeTokenColumns}
+          ${runtimeTokenColumns}, created_by_user_id
         )
-        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       )
       .run(
@@ -442,6 +447,7 @@ export class SqliteRuntimeTokenStore implements IRuntimeTokenStore {
         record.createdAt,
         record.lastUsedAt ?? null,
         record.subject,
+        record.createdByUserId ?? null,
       );
   }
 

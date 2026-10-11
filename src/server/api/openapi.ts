@@ -550,6 +550,20 @@ export function createOpenApiDocument(
             authenticated: jsonSchema.boolean({
               description: "Whether this request is authenticated for local admin APIs.",
             }),
+            kind: {
+              type: "string",
+              enum: ["user", "admin"],
+              description: "Which credential authenticated this request; absent when none did.",
+            },
+            user: jsonSchema.object(
+              {
+                id: jsonSchema.string({ description: "Console user id." }),
+                walletAddress: jsonSchema.string({ description: "thirdweb wallet behind the session." }),
+                phone: jsonSchema.string({ description: "E.164 phone the sign-in came in on, when used." }),
+                email: jsonSchema.string({ description: "Email the sign-in came in on, when used." }),
+              },
+              { description: "Console user behind a live oomol_connect_user_session cookie, when present." },
+            ),
           },
           {
             required: ["adminAuthConfigured", "authenticated"],

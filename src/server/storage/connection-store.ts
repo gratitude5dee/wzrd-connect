@@ -1,4 +1,5 @@
 import type {
+  ConnectionSetOptions,
   IConnectionStore,
   StoredConnection,
   StoredLocalConnection,
@@ -60,7 +61,12 @@ export class SqlConnectionStore implements IConnectionStore {
     return Promise.all(rows.map((row) => this.read(row)));
   }
 
-  async set(service: string, connectionName: string, credential: ResolvedCredential): Promise<StoredLocalConnection> {
+  async set(
+    service: string,
+    connectionName: string,
+    credential: ResolvedCredential,
+    options?: ConnectionSetOptions,
+  ): Promise<StoredLocalConnection> {
     const value = await this.codec.encode(JSON.stringify(credential));
     const [, , [row]] = await this.transaction([
       {
@@ -69,8 +75,8 @@ export class SqlConnectionStore implements IConnectionStore {
       },
       queueSaasConnections("service = ? and connection_name = ?", [service, connectionName]),
       {
-        sql: `insert into connections (id, revision, service, connection_name, value, updated_at, provider_account_id)
-          values (?, ?, ?, ?, ?, ?, ?) on conflict (service, connection_name) do update set
+        sql: `insert into connections (id, revision, service, connection_name, value, updated_at, provider_account_id, created_by_user_id)
+          values (?, ?, ?, ?, ?, ?, ?, ?) on conflict (service, connection_name) do update set
           revision = excluded.revision, value = excluded.value, updated_at = excluded.updated_at,
           source = 'local', managed_project_id = null, provider_config_id = null, external_user_id = null,
           remote_account_id = null, local_request_id = null, provider_account_id = excluded.provider_account_id
@@ -86,6 +92,7 @@ export class SqlConnectionStore implements IConnectionStore {
           credential.authType !== "no_auth" && credential.metadata.providerAccountVerified === true
             ? credential.profile.accountId
             : null,
+          options?.createdByUserId ?? null,
         ],
       },
     ]);
