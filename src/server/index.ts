@@ -88,6 +88,7 @@ async function main(): Promise<void> {
     approvalTtlSeconds,
     consoleAuth: {
       thirdwebSecretKey: optionalEnv("THIRDWEB_SECRET_KEY"),
+      thirdwebClientId: optionalEnv("THIRDWEB_CLIENT_ID"),
       allowlist: optionalEnv("OOMOL_CONNECT_AUTH_ALLOWLIST"),
     },
     pact: {

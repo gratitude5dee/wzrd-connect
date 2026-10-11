@@ -79,8 +79,10 @@ export interface ConnectPactOptions {
 export interface ConnectConsoleAuthOptions {
   /** `OOMOL_CONNECT_ENCRYPTION_KEY` — signs `oomol_connect_user_session`; user auth stays off without it. */
   signingKey?: string;
-  /** `THIRDWEB_SECRET_KEY` — enables the thirdweb OTP endpoints. */
+  /** `THIRDWEB_SECRET_KEY` — enables the thirdweb OTP endpoints (preferred credential). */
   thirdwebSecretKey?: string;
+  /** `THIRDWEB_CLIENT_ID` — fallback credential when no secret key is configured. */
+  thirdwebClientId?: string;
   /** `OOMOL_CONNECT_AUTH_ALLOWLIST` — comma-separated identities; unset opens sign-up. */
   allowlist?: string;
 }
@@ -258,9 +260,13 @@ export async function createConnectApp(options: ConnectAppOptions): Promise<Conn
         },
       },
       thirdwebAuth: {
-        client: options.consoleAuth?.thirdwebSecretKey
-          ? new ThirdwebClient({ secretKey: options.consoleAuth.thirdwebSecretKey })
-          : undefined,
+        client:
+          options.consoleAuth?.thirdwebSecretKey || options.consoleAuth?.thirdwebClientId
+            ? new ThirdwebClient({
+                secretKey: options.consoleAuth.thirdwebSecretKey,
+                clientId: options.consoleAuth.thirdwebClientId,
+              })
+            : undefined,
         userSession: {
           signingKey: options.consoleAuth?.signingKey,
           store: options.runtimeDatabase.consoleUserStore,

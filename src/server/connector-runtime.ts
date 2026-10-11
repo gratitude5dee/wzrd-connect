@@ -110,8 +110,10 @@ export interface ConnectorRuntimeOptions {
 
 /** Console user sign-in flags parsed by the host (spec §3). */
 export interface ConnectorConsoleAuthOptions {
-  /** `THIRDWEB_SECRET_KEY` — enables the `/api/auth/thirdweb/*` endpoints. */
+  /** `THIRDWEB_SECRET_KEY` — enables the `/api/auth/thirdweb/*` endpoints (preferred credential). */
   thirdwebSecretKey?: string;
+  /** `THIRDWEB_CLIENT_ID` — fallback credential when no secret key is configured. */
+  thirdwebClientId?: string;
   /** `OOMOL_CONNECT_AUTH_ALLOWLIST` — comma-separated E.164 phones/emails/wallets; unset opens sign-up. */
   allowlist?: string;
 }
@@ -255,6 +257,7 @@ async function openRuntime(options: ConnectorRuntimeOptions): Promise<ConnectorR
         consoleAuth: {
           signingKey: options.encryptionKey,
           thirdwebSecretKey: options.consoleAuth?.thirdwebSecretKey,
+          thirdwebClientId: options.consoleAuth?.thirdwebClientId,
           allowlist: options.consoleAuth?.allowlist,
         },
         allowedCustomOAuth: options.allowedCustomOAuth,

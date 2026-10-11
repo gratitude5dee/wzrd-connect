@@ -36,7 +36,14 @@ export interface ThirdwebAuthResult {
 }
 
 export interface ThirdwebClientOptions {
-  secretKey: string;
+  /**
+   * Project secret key (`x-secret-key`, thirdweb's backend credential). Preferred when set — but the
+   * header is validated whenever it is sent, so an invalid secret poisons the request; deployments
+   * without a valid secret should leave this unset and use `clientId`.
+   */
+  secretKey?: string;
+  /** Project client ID (`x-client-id`, the frontend-usage credential thirdweb also accepts here). */
+  clientId?: string;
   fetcher?: typeof fetch;
 }
 
@@ -54,13 +61,19 @@ function authIdentityBody(input: ThirdwebInitiateInput): Record<string, string> 
   };
 }
 
-/** thirdweb server-side auth API (SMS/email OTP), authenticated with the project secret key. */
+/**
+ * thirdweb server-side auth API (SMS/email OTP). Authenticates with `x-secret-key` when a secret
+ * key is configured, otherwise with `x-client-id` — both are accepted by `/v1/auth/*` and the
+ * console only needs the verified wallet identity, not the returned JWT.
+ */
 export class ThirdwebClient implements ThirdwebAuthClient {
-  private readonly secretKey: string;
+  private readonly authHeaders: Record<string, string>;
   private readonly fetcher?: typeof fetch;
 
   constructor(options: ThirdwebClientOptions) {
-    this.secretKey = options.secretKey;
+    this.authHeaders = options.secretKey
+      ? { "x-secret-key": options.secretKey }
+      : { "x-client-id": options.clientId ?? "" };
     this.fetcher = options.fetcher;
   }
 
@@ -92,7 +105,7 @@ export class ThirdwebClient implements ThirdwebAuthClient {
           fetcher: this.fetcher,
           init: {
             method: "POST",
-            headers: { "content-type": "application/json", "x-secret-key": this.secretKey },
+            headers: { "content-type": "application/json", ...this.authHeaders },
             body: JSON.stringify(body),
           },
         },
