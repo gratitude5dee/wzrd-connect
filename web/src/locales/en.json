@@ -24,8 +24,7 @@
     "copied": "Copied"
   },
   "brand": {
-    "subtitle": "Local runtime console",
-    "adminAccess": "Admin access"
+    "subtitle": "Local runtime console"
   },
   "language": {
     "label": "Language",
@@ -56,7 +55,8 @@
     "logoutFailed": "Could not log out. Try again.",
     "primaryNav": "Primary",
     "refreshData": "Refresh data",
-    "logout": "Log out",
+    "signOut": "Sign out",
+    "identityOperator": "Operator",
     "theme": "Theme",
     "themeMode": {
       "auto": "Auto",
@@ -1325,5 +1325,52 @@
       "connectAnother": "Connect another service",
       "setAccess": "Set agent access"
     }
+  },
+  "auth": {
+    "title": "Sign in",
+    "subtitle": "Verify your phone or email to open the console.",
+    "tabs": {
+      "phone": "Phone",
+      "email": "Email"
+    },
+    "phone": {
+      "label": "Phone number",
+      "hint": "Use E.164 format, like +14155552671."
+    },
+    "email": {
+      "label": "Email address"
+    },
+    "sendCode": "Send code",
+    "code": {
+      "label": "Verification code",
+      "hint": "We sent a 6-digit code to {{identity}}."
+    },
+    "verify": "Verify and sign in",
+    "resend": "Resend code",
+    "resendWait": "Resend in {{seconds}}s",
+    "changeIdentity": "Use a different phone or email",
+    "operator": {
+      "title": "Operator sign-in",
+      "description": "Deployment operators sign in with the admin token."
+    },
+    "errors": {
+      "invalidIdentity": "Enter a valid phone number or email address.",
+      "invalidCode": "That code is invalid or expired. Try again.",
+      "rateLimited": "Too many attempts — wait a few minutes, then try again.",
+      "unavailable": "Sign-in is not configured on this deployment.",
+      "disabled": "This account is disabled.",
+      "failed": "Something went wrong. Try again."
+    },
+    "pending": {
+      "title": "Access pending",
+      "signedInAs": "Signed in as {{identity}}",
+      "description": "Your sign-in worked, but an operator still needs to approve your access.",
+      "note": "Ask an operator to add you to the allowlist, then sign in again.",
+      "signOut": "Sign out"
+    }
+  },
+  "landing": {
+    "connectNow": "Connect now",
+    "stubPitch": "Scoped access for your agents — connect services, set permissions, watch every call."
   }
 }

@@ -24,8 +24,7 @@
     "copied": "コピーしました"
   },
   "brand": {
-    "subtitle": "ローカルランタイムコンソール",
-    "adminAccess": "管理者アクセス"
+    "subtitle": "ローカルランタイムコンソール"
   },
   "language": {
     "label": "言語",
@@ -56,7 +55,8 @@
     "logoutFailed": "ログアウトできませんでした。もう一度お試しください。",
     "primaryNav": "メインナビゲーション",
     "refreshData": "データを更新",
-    "logout": "ログアウト",
+    "signOut": "サインアウト",
+    "identityOperator": "オペレーター",
     "theme": "テーマ",
     "themeMode": {
       "auto": "自動",
@@ -1325,5 +1325,52 @@
       "connectAnother": "別のサービスを接続",
       "setAccess": "エージェントのアクセスを設定"
     }
+  },
+  "auth": {
+    "title": "サインイン",
+    "subtitle": "電話番号またはメールアドレスを認証してコンソールを開きます。",
+    "tabs": {
+      "phone": "電話番号",
+      "email": "メール"
+    },
+    "phone": {
+      "label": "電話番号",
+      "hint": "+14155552671 のような E.164 形式で入力してください。"
+    },
+    "email": {
+      "label": "メールアドレス"
+    },
+    "sendCode": "コードを送信",
+    "code": {
+      "label": "認証コード",
+      "hint": "{{identity}} に 6 桁のコードを送信しました。"
+    },
+    "verify": "認証してサインイン",
+    "resend": "コードを再送信",
+    "resendWait": "{{seconds}} 秒後に再送信できます",
+    "changeIdentity": "別の電話番号またはメールを使用",
+    "operator": {
+      "title": "オペレーターのサインイン",
+      "description": "デプロイのオペレーターは管理トークンでサインインします。"
+    },
+    "errors": {
+      "invalidIdentity": "有効な電話番号またはメールアドレスを入力してください。",
+      "invalidCode": "コードが無効または期限切れです。もう一度お試しください。",
+      "rateLimited": "試行回数が多すぎます。数分待ってからお試しください。",
+      "unavailable": "このデプロイではサインインが設定されていません。",
+      "disabled": "このアカウントは無効です。",
+      "failed": "問題が発生しました。もう一度お試しください。"
+    },
+    "pending": {
+      "title": "アクセス承認待ち",
+      "signedInAs": "{{identity}} としてサインイン済み",
+      "description": "サインインは完了しましたが、アクセスにはオペレーターの承認が必要です。",
+      "note": "オペレーターに許可リストへの追加を依頼してから、再度サインインしてください。",
+      "signOut": "サインアウト"
+    }
+  },
+  "landing": {
+    "connectNow": "今すぐ接続",
+    "stubPitch": "エージェントへのスコープ付きアクセス — サービスを接続し、権限を設定し、すべての呼び出しを監視します。"
   }
 }

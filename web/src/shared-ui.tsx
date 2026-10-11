@@ -1,11 +1,16 @@
+import type { AppLang } from "./i18n";
 import type { ProviderDefinition } from "./model";
+import type { ThemeMode } from "./theme";
 import type { ReactNode } from "react";
 
-import { CircleAlert, Inbox } from "lucide-react";
+import { useI18n, useLang, useTranslate } from "@embra/i18n/react";
+import { CircleAlert, Inbox, Monitor, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import providerIconUrls from "virtual:oomol-provider-icons";
+import { persistLang, supportedLangs } from "./i18n";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge as UiBadge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export function Badge(props: { children: ReactNode; tone?: "success" | "warning" | "error" }): ReactNode {
   return (
@@ -157,4 +162,69 @@ export function FormStatus(props: { message: string }): ReactNode {
 
 export function StatusDot(props: { ok: boolean }): ReactNode {
   return <span className={props.ok ? "status-dot ok" : "status-dot error"} />;
+}
+
+export const themeOptions = [
+  { value: "auto", labelKey: "shell.themeMode.auto", icon: Monitor },
+  { value: "light", labelKey: "shell.themeMode.light", icon: Sun },
+  { value: "dark", labelKey: "shell.themeMode.dark", icon: Moon },
+] as const;
+
+export function ThemeControl(props: { theme: ThemeMode; onThemeChange(theme: ThemeMode): void }): ReactNode {
+  const t = useTranslate();
+
+  return (
+    <div className="theme-control" aria-label={t("shell.theme")}>
+      <span>{t("shell.theme")}</span>
+      <div className="theme-segmented-control" role="radiogroup" aria-label={t("shell.theme")}>
+        {themeOptions.map((item) => {
+          const Icon = item.icon;
+          const selected = props.theme === item.value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              className={selected ? "theme-segment active" : "theme-segment"}
+              role="radio"
+              aria-checked={selected}
+              aria-label={t(item.labelKey)}
+              title={t(item.labelKey)}
+              onClick={() => props.onThemeChange(item.value)}
+            >
+              <Icon size={14} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function LanguageSelect(): ReactNode {
+  const t = useTranslate();
+  const i18n = useI18n();
+  const lang = useLang() as AppLang;
+
+  function switchLang(nextLang: AppLang): void {
+    persistLang(nextLang);
+    void i18n.switchLang(nextLang);
+  }
+
+  return (
+    <div className="language-select">
+      <span className="language-select-label">{t("language.label")}</span>
+      <Select value={lang} onValueChange={(value) => switchLang(value as AppLang)}>
+        <SelectTrigger className="language-select-trigger" size="sm" aria-label={t("language.label")}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="language-select-content" position="popper" align="start">
+          {supportedLangs.map((item) => (
+            <SelectItem key={item} value={item}>
+              {t(`language.${item}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
 }

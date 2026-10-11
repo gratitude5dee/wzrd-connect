@@ -5,15 +5,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { OperatorUnlockForm } from "./auth-page";
 import { createAppI18n } from "./i18n";
-import {
-  App,
-  loadRuntimeData,
-  nextAuthLoadState,
-  nextLogoutState,
-  subscribeToOAuthCompletions,
-  UnlockView,
-} from "./ui";
+import { App, loadRuntimeData, nextAuthLoadState, nextLogoutState, subscribeToOAuthCompletions } from "./ui";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -25,7 +19,7 @@ describe("App", () => {
       createElement(
         I18nProvider,
         { i18n: createAppI18n("en") },
-        createElement(MemoryRouter, { initialEntries: ["/"] }, createElement(App)),
+        createElement(MemoryRouter, { initialEntries: ["/agents"] }, createElement(App)),
       ),
     );
 
@@ -38,11 +32,9 @@ describe("App", () => {
       createElement(
         I18nProvider,
         { i18n: createAppI18n("en") },
-        createElement(UnlockView, {
+        createElement(OperatorUnlockForm, {
           loading: false,
           message: null,
-          theme: "light",
-          onThemeChange: () => {},
           onUnlock: () => {},
         }),
       ),
@@ -57,11 +49,9 @@ describe("App", () => {
       createElement(
         I18nProvider,
         { i18n: createAppI18n("en") },
-        createElement(UnlockView, {
+        createElement(OperatorUnlockForm, {
           loading: true,
           message: null,
-          theme: "light",
-          onThemeChange: () => {},
           onUnlock: () => {},
         }),
       ),

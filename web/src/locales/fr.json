@@ -24,8 +24,7 @@
     "copied": "Copié"
   },
   "brand": {
-    "subtitle": "Console du runtime local",
-    "adminAccess": "Accès administrateur"
+    "subtitle": "Console du runtime local"
   },
   "language": {
     "label": "Langue",
@@ -56,7 +55,8 @@
     "logoutFailed": "Impossible de se déconnecter. Réessayez.",
     "primaryNav": "Principal",
     "refreshData": "Actualiser les données",
-    "logout": "Se déconnecter",
+    "signOut": "Se déconnecter",
+    "identityOperator": "Opérateur",
     "theme": "Thème",
     "themeMode": {
       "auto": "Automatique",
@@ -1325,5 +1325,52 @@
       "connectAnother": "Connecter un autre service",
       "setAccess": "Définir l'accès de l'agent"
     }
+  },
+  "auth": {
+    "title": "Connexion",
+    "subtitle": "Vérifiez votre téléphone ou votre e-mail pour ouvrir la console.",
+    "tabs": {
+      "phone": "Téléphone",
+      "email": "E-mail"
+    },
+    "phone": {
+      "label": "Numéro de téléphone",
+      "hint": "Utilisez le format E.164, comme +14155552671."
+    },
+    "email": {
+      "label": "Adresse e-mail"
+    },
+    "sendCode": "Envoyer le code",
+    "code": {
+      "label": "Code de vérification",
+      "hint": "Nous avons envoyé un code à 6 chiffres à {{identity}}."
+    },
+    "verify": "Vérifier et se connecter",
+    "resend": "Renvoyer le code",
+    "resendWait": "Renvoi dans {{seconds}} s",
+    "changeIdentity": "Utiliser un autre téléphone ou e-mail",
+    "operator": {
+      "title": "Connexion opérateur",
+      "description": "Les opérateurs du déploiement se connectent avec le jeton admin."
+    },
+    "errors": {
+      "invalidIdentity": "Saisissez un numéro de téléphone ou un e-mail valide.",
+      "invalidCode": "Ce code est invalide ou expiré. Réessayez.",
+      "rateLimited": "Trop de tentatives — patientez quelques minutes, puis réessayez.",
+      "unavailable": "La connexion n'est pas configurée sur ce déploiement.",
+      "disabled": "Ce compte est désactivé.",
+      "failed": "Une erreur est survenue. Réessayez."
+    },
+    "pending": {
+      "title": "Accès en attente",
+      "signedInAs": "Connecté en tant que {{identity}}",
+      "description": "Votre connexion a réussi, mais un opérateur doit encore approuver votre accès.",
+      "note": "Demandez à un opérateur de vous ajouter à la liste autorisée, puis reconnectez-vous.",
+      "signOut": "Se déconnecter"
+    }
+  },
+  "landing": {
+    "connectNow": "Se connecter",
+    "stubPitch": "Accès limité pour vos agents — connectez des services, définissez des permissions, surveillez chaque appel."
   }
 }

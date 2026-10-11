@@ -24,8 +24,7 @@
     "copied": "已複製"
   },
   "brand": {
-    "subtitle": "本機執行階段控制台",
-    "adminAccess": "管理員存取權"
+    "subtitle": "本機執行階段控制台"
   },
   "language": {
     "label": "語言",
@@ -56,7 +55,8 @@
     "logoutFailed": "無法登出，請再試一次。",
     "primaryNav": "主要導覽",
     "refreshData": "重新整理資料",
-    "logout": "登出",
+    "signOut": "登出",
+    "identityOperator": "維運人員",
     "theme": "佈景主題",
     "themeMode": {
       "auto": "自動",
@@ -1325,5 +1325,52 @@
       "connectAnother": "再連線一個服務",
       "setAccess": "設定代理權限"
     }
+  },
+  "auth": {
+    "title": "登入",
+    "subtitle": "驗證您的手機號碼或電子郵件以開啟主控台。",
+    "tabs": {
+      "phone": "手機號碼",
+      "email": "電子郵件"
+    },
+    "phone": {
+      "label": "手機號碼",
+      "hint": "請使用 E.164 格式，例如 +14155552671。"
+    },
+    "email": {
+      "label": "電子郵件地址"
+    },
+    "sendCode": "傳送驗證碼",
+    "code": {
+      "label": "驗證碼",
+      "hint": "我們已向 {{identity}} 傳送 6 位數驗證碼。"
+    },
+    "verify": "驗證並登入",
+    "resend": "重新傳送驗證碼",
+    "resendWait": "{{seconds}} 秒後可重新傳送",
+    "changeIdentity": "使用其他手機號碼或電子郵件",
+    "operator": {
+      "title": "維運人員登入",
+      "description": "部署維運人員使用管理員權杖登入。"
+    },
+    "errors": {
+      "invalidIdentity": "請輸入有效的手機號碼或電子郵件地址。",
+      "invalidCode": "驗證碼無效或已過期，請重試。",
+      "rateLimited": "嘗試次數過多，請稍候幾分鐘再試。",
+      "unavailable": "此部署未設定登入功能。",
+      "disabled": "此帳號已被停用。",
+      "failed": "發生錯誤，請重試。"
+    },
+    "pending": {
+      "title": "等待核准",
+      "signedInAs": "已登入為 {{identity}}",
+      "description": "您的登入已成功，但仍需維運人員核准您的存取權限。",
+      "note": "請聯絡維運人員將您加入允許清單，然後重新登入。",
+      "signOut": "登出"
+    }
+  },
+  "landing": {
+    "connectNow": "立即連接",
+    "stubPitch": "為您的代理提供受控存取——連接服務、設定權限、檢視每次呼叫。"
   }
 }

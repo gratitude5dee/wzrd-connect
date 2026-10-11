@@ -24,8 +24,7 @@
     "copied": "已复制"
   },
   "brand": {
-    "subtitle": "本地运行时控制台",
-    "adminAccess": "管理员访问"
+    "subtitle": "本地运行时控制台"
   },
   "language": {
     "label": "语言",
@@ -56,7 +55,8 @@
     "logoutFailed": "无法登出，请重试。",
     "primaryNav": "主导航",
     "refreshData": "刷新数据",
-    "logout": "登出",
+    "signOut": "退出登录",
+    "identityOperator": "运维人员",
     "theme": "主题",
     "themeMode": {
       "auto": "自动",
@@ -1325,5 +1325,52 @@
       "connectAnother": "再连接一个服务",
       "setAccess": "设置代理权限"
     }
+  },
+  "auth": {
+    "title": "登录",
+    "subtitle": "验证您的手机号或邮箱以打开控制台。",
+    "tabs": {
+      "phone": "手机号",
+      "email": "邮箱"
+    },
+    "phone": {
+      "label": "手机号码",
+      "hint": "请使用 E.164 格式，例如 +14155552671。"
+    },
+    "email": {
+      "label": "邮箱地址"
+    },
+    "sendCode": "发送验证码",
+    "code": {
+      "label": "验证码",
+      "hint": "我们已向 {{identity}} 发送了 6 位验证码。"
+    },
+    "verify": "验证并登录",
+    "resend": "重新发送验证码",
+    "resendWait": "{{seconds}} 秒后可重新发送",
+    "changeIdentity": "使用其他手机号或邮箱",
+    "operator": {
+      "title": "运维人员登录",
+      "description": "部署运维人员使用管理员令牌登录。"
+    },
+    "errors": {
+      "invalidIdentity": "请输入有效的手机号或邮箱地址。",
+      "invalidCode": "验证码无效或已过期，请重试。",
+      "rateLimited": "尝试次数过多，请稍等几分钟后再试。",
+      "unavailable": "此部署未配置登录功能。",
+      "disabled": "该账号已被禁用。",
+      "failed": "出错了，请重试。"
+    },
+    "pending": {
+      "title": "等待审批",
+      "signedInAs": "已登录为 {{identity}}",
+      "description": "您的登录已成功，但仍需运维人员批准您的访问权限。",
+      "note": "请联系运维人员将您加入允许列表，然后重新登录。",
+      "signOut": "退出登录"
+    }
+  },
+  "landing": {
+    "connectNow": "立即连接",
+    "stubPitch": "为您的智能体提供受控访问——连接服务、设置权限、查看每次调用。"
   }
 }
