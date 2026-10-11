@@ -1371,6 +1371,23 @@
   },
   "landing": {
     "connectNow": "Connect now",
-    "stubPitch": "Scoped access for your agents — connect services, set permissions, watch every call."
+    "title": "Connect your services. Hand your agents scoped access.",
+    "subtitle": "WZRD Connect holds the credentials, scopes every action, and logs every call — your agents get only what you allow.",
+    "viewDocs": "View docs",
+    "values": {
+      "connect": {
+        "title": "Connect",
+        "description": "1,500+ services in the catalog — OAuth and API-key connections in minutes."
+      },
+      "scope": {
+        "title": "Scope",
+        "description": "Per-agent action allowlists, approval policies, and high-risk gating."
+      },
+      "audit": {
+        "title": "Audit",
+        "description": "One activity feed for every run, approval, and denial."
+      }
+    },
+    "footer": "Powered by PACT custody"
   }
 }

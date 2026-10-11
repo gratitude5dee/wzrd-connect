@@ -42,10 +42,11 @@ import { ApiError, apiGet, apiPost } from "./api";
 import { ApprovalsPage } from "./approvals-page";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
 import { authDisplayIdentity, authGateTarget } from "./auth";
-import { AuthPage, AuthPendingPage, LandingStub } from "./auth-page";
+import { AuthPage, AuthPendingPage } from "./auth-page";
 import { normalizeGatewayUrl } from "./client-onboarding";
 import { ConnectionPage } from "./connection-page";
 import { ConnectionsPage } from "./connections-page";
+import { LandingPage } from "./landing-page";
 import { createOverviewSummary, emptyData, isUsableCredentialConnection } from "./model";
 import { OAuthAppsPage } from "./oauth-apps-page";
 import { OverviewPage } from "./overview-page";
@@ -349,9 +350,12 @@ export function App(): ReactNode {
   }
 
   // `/` and `/auth*` are the public surface (spec §3.5): they render without
-  // waiting on the session probe and never require one.
+  // waiting on the session probe and never require one. The landing page
+  // flips Connect now to the console once the probe confirms a session.
   if (location.pathname === "/") {
-    return <LandingStub theme={theme} onThemeChange={setTheme} />;
+    return (
+      <LandingPage signedIn={runtimeChecked && authSession.authenticated} theme={theme} onThemeChange={setTheme} />
+    );
   }
   if (location.pathname === "/auth") {
     return runtimeChecked ? (

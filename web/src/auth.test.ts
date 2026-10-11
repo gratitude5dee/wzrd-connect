@@ -19,7 +19,7 @@ import {
   validSignInIdentity,
   verifySignInCode,
 } from "./auth";
-import { AuthPage, AuthPendingPage, LandingStub } from "./auth-page";
+import { AuthPage, AuthPendingPage } from "./auth-page";
 import { createAppI18n } from "./i18n";
 
 afterEach(() => {
@@ -268,13 +268,5 @@ describe("AuthPendingPage", () => {
     expect(markup).toContain("Access pending");
     expect(markup).toContain("+14155552671");
     expect(markup).toContain("Sign out");
-  });
-});
-
-describe("LandingStub", () => {
-  it("renders the placeholder seam with a link to /auth", () => {
-    const markup = renderEnglish(createElement(LandingStub, { theme: "light", onThemeChange: () => {} }), "/");
-    expect(markup).toContain("WZRD Connect");
-    expect(markup).toContain("/auth");
   });
 });

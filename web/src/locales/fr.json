@@ -1371,6 +1371,23 @@
   },
   "landing": {
     "connectNow": "Se connecter",
-    "stubPitch": "Accès limité pour vos agents — connectez des services, définissez des permissions, surveillez chaque appel."
+    "title": "Connectez vos services. Donnez à vos agents un accès limité.",
+    "subtitle": "WZRD Connect conserve les identifiants, délimite chaque action et journalise chaque appel — vos agents n'obtiennent que ce que vous autorisez.",
+    "viewDocs": "Voir la documentation",
+    "values": {
+      "connect": {
+        "title": "Connecter",
+        "description": "Plus de 1 500 services au catalogue — connexions OAuth et par clé API en quelques minutes."
+      },
+      "scope": {
+        "title": "Délimiter",
+        "description": "Listes d'actions autorisées par agent, politiques d'approbation et contrôle des opérations à risque."
+      },
+      "audit": {
+        "title": "Auditer",
+        "description": "Un flux d'activité unifié pour chaque exécution, approbation et refus."
+      }
+    },
+    "footer": "Propulsé par la conservation PACT"
   }
 }

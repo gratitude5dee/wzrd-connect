@@ -1371,6 +1371,23 @@
   },
   "landing": {
     "connectNow": "立即連接",
-    "stubPitch": "為您的代理提供受控存取——連接服務、設定權限、檢視每次呼叫。"
+    "title": "連接您的服務，為您的代理授予受限存取權。",
+    "subtitle": "WZRD Connect 保管憑證、限制每項操作並記錄每次呼叫——您的代理只能取得您允許的權限。",
+    "viewDocs": "檢視文件",
+    "values": {
+      "connect": {
+        "title": "連接",
+        "description": "目錄內 1,500+ 項服務——幾分鐘即可完成 OAuth 與 API 金鑰連接。"
+      },
+      "scope": {
+        "title": "限定範圍",
+        "description": "依代理設定操作白名單、核准政策與高風險操作管制。"
+      },
+      "audit": {
+        "title": "稽核",
+        "description": "單一活動記錄涵蓋每次執行、核准與拒絕。"
+      }
+    },
+    "footer": "由 PACT 託管提供支援"
   }
 }
