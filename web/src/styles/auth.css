@@ -1,0 +1,83 @@
+.auth-panel .auth-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 640;
+}
+
+.auth-channel-tabs {
+  display: flex;
+  width: 100%;
+}
+
+.auth-otp-input {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.45em;
+  text-align: center;
+}
+
+.auth-verify-links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.auth-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.auth-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.auth-link:disabled {
+  color: var(--muted-foreground);
+  cursor: default;
+}
+
+.auth-operator {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.auth-operator summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.auth-operator summary::-webkit-details-marker {
+  display: none;
+}
+
+.auth-operator summary svg {
+  transition: transform 120ms ease;
+}
+
+.auth-operator[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.auth-operator-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.auth-pending-identity {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 620;
+  overflow-wrap: anywhere;
+}

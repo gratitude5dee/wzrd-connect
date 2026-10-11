@@ -348,6 +348,26 @@
   gap: 12px;
   margin-left: auto;
 }
+
+.shell-identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.shell-identity-label {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-signout {
+  color: var(--muted-foreground);
+}
 .console-settings-panel[data-slot="dialog-content"] {
   top: 64px;
   right: 24px;

@@ -1,4 +1,4 @@
-import type { AppLang } from "./i18n";
+import type { AuthSession, AuthSessionUser } from "./auth";
 import type {
   AppData,
   ApprovalListPage,
@@ -11,9 +11,9 @@ import type {
 } from "./model";
 import type { ThemeMode } from "./theme";
 import type { LucideIcon } from "lucide-react";
-import type { ReactNode, SubmitEvent } from "react";
+import type { ReactNode } from "react";
 
-import { useI18n, useLang, useTranslate } from "@embra/i18n/react";
+import { useTranslate } from "@embra/i18n/react";
 import {
   Activity,
   BookOpen,
@@ -24,15 +24,12 @@ import {
   GraduationCap,
   Loader2,
   LogOut,
-  Monitor,
-  Moon,
   PanelLeft,
   Plug,
   RefreshCw,
   Settings,
   ShieldCheck,
   Signature,
-  Sun,
   TerminalSquare,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -44,26 +41,24 @@ import { AgentsPage } from "./agents-page";
 import { ApiError, apiGet, apiPost } from "./api";
 import { ApprovalsPage } from "./approvals-page";
 import oomolConnectLogoUrl from "./assets/oomol-connect-logo.png";
+import { authDisplayIdentity, authGateTarget } from "./auth";
+import { AuthPage, AuthPendingPage, LandingStub } from "./auth-page";
 import { normalizeGatewayUrl } from "./client-onboarding";
 import { ConnectionPage } from "./connection-page";
 import { ConnectionsPage } from "./connections-page";
-import { persistLang, supportedLangs } from "./i18n";
 import { createOverviewSummary, emptyData, isUsableCredentialConnection } from "./model";
 import { OAuthAppsPage } from "./oauth-apps-page";
 import { OverviewPage } from "./overview-page";
 import { PactPage } from "./pact-page";
 import { ProvidersPage } from "./providers-page";
 import { ResourcesPage } from "./resources-page";
-import { InlineError, StatusDot } from "./shared-ui";
+import { InlineError, LanguageSelect, StatusDot, themeOptions } from "./shared-ui";
 import { readSidebarExpanded, writeSidebarExpanded } from "./sidebar-state";
 import { useThemeMode } from "./theme";
 import { WelcomePage } from "./welcome-page";
 import { readWelcomeDismissed } from "./welcome-state";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Toaster } from "@/components/ui/sonner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -115,16 +110,7 @@ const quickNavPaths: Record<string, string> = {
 const oauthCompletionChannelName = "oomol-connect-oauth";
 const oauthCompletedType = "oauth.completed";
 
-const themeOptions = [
-  { value: "auto", labelKey: "shell.themeMode.auto", icon: Monitor },
-  { value: "light", labelKey: "shell.themeMode.light", icon: Sun },
-  { value: "dark", labelKey: "shell.themeMode.dark", icon: Moon },
-] as const;
-
-export interface AuthSession {
-  adminAuthConfigured: boolean;
-  authenticated: boolean;
-}
+export type { AuthSession } from "./auth";
 
 export interface OAuthCompletionMessage {
   type: typeof oauthCompletedType;
@@ -254,6 +240,8 @@ export async function loadRuntimeData(
 export function App(): ReactNode {
   const t = useTranslate();
   const { theme, setTheme } = useThemeMode();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [data, setData] = useState<AppData>(emptyData);
   const [authSession, setAuthSession] = useState<AuthSession>({
     adminAuthConfigured: false,
@@ -337,6 +325,15 @@ export function App(): ReactNode {
     refresh();
   }
 
+  // A verified thirdweb sign-in already holds the user record; mark the
+  // session authenticated immediately, then reload console data behind it.
+  function signedIn(user: AuthSessionUser): void {
+    pendingUnlockToken.current = "";
+    setAuthSession({ ...authSession, authenticated: true, kind: "user", user });
+    setError(null);
+    refresh();
+  }
+
   function logout(): void {
     void apiPost("/api/auth/logout", {})
       .then(() => {
@@ -344,24 +341,50 @@ export function App(): ReactNode {
         setAuthSession(next.authSession);
         setError(null);
         refresh();
+        navigate("/auth");
       })
       .catch((caught: unknown) => {
         setError(caught instanceof Error ? caught.message : t("shell.logoutFailed"));
       });
   }
 
-  if (locked) {
-    return <UnlockView loading={loading} message={error} theme={theme} onThemeChange={setTheme} onUnlock={unlock} />;
+  // `/` and `/auth*` are the public surface (spec §3.5): they render without
+  // waiting on the session probe and never require one.
+  if (location.pathname === "/") {
+    return <LandingStub theme={theme} onThemeChange={setTheme} />;
+  }
+  if (location.pathname === "/auth") {
+    return runtimeChecked ? (
+      <AuthPage
+        loading={loading}
+        authenticated={authSession.authenticated}
+        operatorMessage={error}
+        theme={theme}
+        onThemeChange={setTheme}
+        onUnlock={unlock}
+        onSignedIn={signedIn}
+      />
+    ) : (
+      <InitialLoadingView />
+    );
+  }
+  if (location.pathname === "/auth/pending") {
+    return <AuthPendingPage theme={theme} onThemeChange={setTheme} />;
   }
 
   if (!runtimeChecked) {
     return <InitialLoadingView />;
   }
 
+  const gateTarget = authGateTarget(location.pathname, location.search, authSession.authenticated);
+  if (gateTarget) {
+    return <Navigate to={gateTarget} replace />;
+  }
+
   return (
     <AppShell
       data={data}
-      showLogout={authSession.adminAuthConfigured && authSession.authenticated}
+      authSession={authSession}
       loading={loading}
       error={error}
       theme={theme}
@@ -418,7 +441,7 @@ function headerDetailForSection(section: string | undefined, data: AppData): Hea
 
 function AppShell(props: {
   data: AppData;
-  showLogout: boolean;
+  authSession: AuthSession;
   loading: boolean;
   error: string | null;
   theme: ThemeMode;
@@ -452,6 +475,9 @@ function AppShell(props: {
     .filter(Boolean)
     .join(" ");
   const headerDetail = useMemo(() => headerDetailForSection(section, props.data), [section, props.data]);
+  // Header identity chip: truncated wallet/phone/email for console users,
+  // "Operator" for admin-credential sessions (spec §3.5).
+  const identity = authDisplayIdentity(props.authSession);
   // First-run: a truly empty install (no connections, no agent tokens) lands
   // on /welcome once — until the guide is dismissed it stays the landing.
   const installEmpty =
@@ -562,9 +588,6 @@ function AppShell(props: {
           <div className="sidebar-footer">
             <ShellFooterRuntime ok={!props.error} rail={rail} />
             <ThemeMenuButton theme={props.theme} onThemeChange={props.onThemeChange} rail={rail} />
-            {props.showLogout ? (
-              <ShellFooterButton icon={LogOut} label={t("shell.logout")} rail={rail} onClick={props.onLogout} />
-            ) : null}
           </div>
         </aside>
 
@@ -613,6 +636,17 @@ function AppShell(props: {
               >
                 <Settings size={18} aria-hidden="true" />
               </Button>
+              {identity ? (
+                <div className="shell-identity">
+                  <span className="shell-identity-label">
+                    {identity.kind === "operator" ? t("shell.identityOperator") : identity.label}
+                  </span>
+                  <Button variant="ghost" size="sm" className="shell-signout" onClick={props.onLogout}>
+                    <LogOut size={15} aria-hidden="true" />
+                    {t("shell.signOut")}
+                  </Button>
+                </div>
+              ) : null}
             </div>
             <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
               <DialogContent className="console-settings-panel">
@@ -740,74 +774,6 @@ function AppShell(props: {
   );
 }
 
-export interface UnlockViewProps {
-  loading: boolean;
-  message: string | null;
-  theme: ThemeMode;
-  onThemeChange(theme: ThemeMode): void;
-  onUnlock(token: string): void;
-}
-
-export function UnlockView(props: UnlockViewProps): ReactNode {
-  const t = useTranslate();
-  const [token, setToken] = useState("");
-
-  function submit(event: SubmitEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    props.onUnlock(token.trim());
-  }
-
-  return (
-    <main className="unlock-screen">
-      <section className="unlock-panel">
-        <div className="brand">
-          <img className="brand-mark" src={oomolConnectLogoUrl} alt="" />
-          <div>
-            <div className="brand-name">WZRD Connect</div>
-            <div className="brand-subtitle">{t("brand.adminAccess")}</div>
-          </div>
-        </div>
-        <LanguageSelect />
-        <ThemeControl theme={props.theme} onThemeChange={props.onThemeChange} />
-        <form className="form-grid" onSubmit={submit}>
-          <Label className="field">
-            <span>{t("unlock.token")}</span>
-            <Input
-              type="password"
-              value={token}
-              onChange={(event) => setToken(event.target.value)}
-              autoFocus
-              autoComplete="current-password"
-            />
-          </Label>
-          <Button
-            className="unlock-submit"
-            type="submit"
-            data-loading={props.loading}
-            aria-busy={props.loading}
-            disabled={!token.trim() || props.loading}
-          >
-            <span className="unlock-button-slot">
-              <Loader2
-                className={props.loading ? "unlock-button-spinner spin" : "unlock-button-spinner idle"}
-                size={16}
-                aria-hidden="true"
-              />
-            </span>
-            <span>{t("unlock.unlockConsole")}</span>
-            <span className="unlock-button-slot" aria-hidden="true" />
-          </Button>
-        </form>
-        {props.message ? (
-          <div className="unlock-status" aria-live="polite">
-            <InlineError message={props.message} />
-          </div>
-        ) : null}
-      </section>
-    </main>
-  );
-}
-
 function ShellNavItem(props: {
   item: NavItem;
   label: string;
@@ -862,25 +828,6 @@ function ShellFooterRuntime(props: { ok: boolean; rail: boolean }): ReactNode {
   );
 }
 
-function ShellFooterButton(props: { icon: LucideIcon; label: string; rail: boolean; onClick(): void }): ReactNode {
-  const Icon = props.icon;
-  const button = (
-    <button type="button" className="nav-item sidebar-footer-item" onClick={props.onClick}>
-      <Icon size={16} />
-      <span className="nav-item-label">{props.label}</span>
-    </button>
-  );
-  if (!props.rail) {
-    return button;
-  }
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side="right">{props.label}</TooltipContent>
-    </Tooltip>
-  );
-}
-
 // The footer's compact theme affordance: one click advances auto → light →
 // dark, the icon shows the current mode.
 function ThemeMenuButton(props: { theme: ThemeMode; onThemeChange(theme: ThemeMode): void; rail: boolean }): ReactNode {
@@ -912,65 +859,6 @@ function ThemeMenuButton(props: { theme: ThemeMode; onThemeChange(theme: ThemeMo
       <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
-  );
-}
-
-function ThemeControl(props: { theme: ThemeMode; onThemeChange(theme: ThemeMode): void }): ReactNode {
-  const t = useTranslate();
-
-  return (
-    <div className="theme-control" aria-label={t("shell.theme")}>
-      <span>{t("shell.theme")}</span>
-      <div className="theme-segmented-control" role="radiogroup" aria-label={t("shell.theme")}>
-        {themeOptions.map((item) => {
-          const Icon = item.icon;
-          const selected = props.theme === item.value;
-          return (
-            <button
-              key={item.value}
-              type="button"
-              className={selected ? "theme-segment active" : "theme-segment"}
-              role="radio"
-              aria-checked={selected}
-              aria-label={t(item.labelKey)}
-              title={t(item.labelKey)}
-              onClick={() => props.onThemeChange(item.value)}
-            >
-              <Icon size={14} />
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function LanguageSelect(): ReactNode {
-  const t = useTranslate();
-  const i18n = useI18n();
-  const lang = useLang() as AppLang;
-
-  function switchLang(nextLang: AppLang): void {
-    persistLang(nextLang);
-    void i18n.switchLang(nextLang);
-  }
-
-  return (
-    <div className="language-select">
-      <span className="language-select-label">{t("language.label")}</span>
-      <Select value={lang} onValueChange={(value) => switchLang(value as AppLang)}>
-        <SelectTrigger className="language-select-trigger" size="sm" aria-label={t("language.label")}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="language-select-content" position="popper" align="start">
-          {supportedLangs.map((item) => (
-            <SelectItem key={item} value={item}>
-              {t(`language.${item}`)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
   );
 }
 
