@@ -30,6 +30,7 @@ export interface CloudflareEnv {
   OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK?: string;
   OOMOL_CONNECT_PACT_STRICT_RECEIPTS?: string;
   THIRDWEB_SECRET_KEY?: string;
+  THIRDWEB_CLIENT_ID?: string;
   OOMOL_CONNECT_AUTH_ALLOWLIST?: string;
 }
 

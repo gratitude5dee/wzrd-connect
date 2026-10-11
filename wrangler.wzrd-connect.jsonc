@@ -35,6 +35,7 @@
   },
   "vars": {
     "OOMOL_CONNECT_ORIGIN": "https://connector.wzrd.tech",
+    "THIRDWEB_CLIENT_ID": "f3a41a11153f2f75d55056f08c1d36d4",
   },
   "d1_databases": [
     {

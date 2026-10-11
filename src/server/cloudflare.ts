@@ -131,6 +131,7 @@ async function createCloudflareApp(env: CloudflareEnv, publicOrigin: string): Pr
     consoleAuth: {
       signingKey: env.OOMOL_CONNECT_ENCRYPTION_KEY,
       thirdwebSecretKey: env.THIRDWEB_SECRET_KEY,
+      thirdwebClientId: env.THIRDWEB_CLIENT_ID,
       allowlist: env.OOMOL_CONNECT_AUTH_ALLOWLIST,
     },
     actionPolicy: new ActionPolicyService({
@@ -226,6 +227,7 @@ function createCacheKey(env: CloudflareEnv, publicOrigin: string): string {
     pactAllowInsecureLoopback: env.OOMOL_CONNECT_PACT_ALLOW_INSECURE_LOOPBACK ?? "",
     pactStrictReceipts: env.OOMOL_CONNECT_PACT_STRICT_RECEIPTS ?? "",
     thirdwebSecretKey: env.THIRDWEB_SECRET_KEY ?? "",
+    thirdwebClientId: env.THIRDWEB_CLIENT_ID ?? "",
     authAllowlist: env.OOMOL_CONNECT_AUTH_ALLOWLIST ?? "",
   });
 }

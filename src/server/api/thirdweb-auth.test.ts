@@ -457,4 +457,13 @@ describe("ThirdwebClient", () => {
       status: 429,
     });
   });
+
+  it("sends x-client-id when no secret key is configured", async () => {
+    const transport = mockTransport();
+    transport.respond(jsonResponse(200, { method: "email", success: true }));
+    const client = new ThirdwebClient({ clientId: "client-1", fetcher: transport.fetcher });
+    await client.initiateAuth({ channel: "email", email: "a@b.co" });
+    expect(transport.calls[0].headers.get("x-client-id")).toBe("client-1");
+    expect(transport.calls[0].headers.get("x-secret-key")).toBeNull();
+  });
 });
